@@ -40,9 +40,9 @@ static int ssystem(const char *fmt, ...)
 
 int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 {
-	ssystem("ifconfig can%d down", port);
-	ssystem("ip link set can%d up type can bitrat %d", port, bitrate);
-	ssystem("ifconfig can%d txqueuelen 100", port);
+	ssystem("sudo ifconfig can%d down", port);
+	ssystem("sudo ip link set can%d up type can bitrat %d", port, bitrate);
+	ssystem("sudo ifconfig can%d txqueuelen 100", port);
 
 	struct sockaddr_can addr; 
 	struct ifreq ifr; 
@@ -50,6 +50,17 @@ int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 	int s = socket(PF_CAN, SOCK_RAW, CAN_RAW);//创建套接字 
 	sprintf(ifr.ifr_name, "can%u", port);
 	ioctl(s, SIOCGIFINDEX, &ifr); //指定 can[port] 设备 
+
+	can_err_mask_t optval = (CAN_ERR_TX_TIMEOUT | 
+		CAN_ERR_LOSTARB |
+		CAN_ERR_CRTL | 
+		CAN_ERR_PROT | 
+		CAN_ERR_TRX | 
+		CAN_ERR_ACK | 
+		CAN_ERR_BUSOFF | 
+		CAN_ERR_BUSERROR |  
+		CAN_ERR_RESTARTED);
+	setsockopt(s, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &optval, sizeof(optval));
 
 	addr.can_family = AF_CAN;
 	addr.can_ifindex = ifr.ifr_ifindex;
@@ -70,9 +81,6 @@ int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 				sizeof(timeout)) < 0)
 		printf("setsockopt SO_SNDTIMEO failed\n");
 #endif
-
-	//can_err_mask_t optval = (CAN_ERR_TX_TIMEOUT | CAN_ERR_BUSOFF);
-	//setsockopt(s, SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &optval, sizeof(optval));
 
 #if 0
 	fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK);
