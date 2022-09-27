@@ -25,7 +25,7 @@
 
 #include "modbus/modbus.h"
 #include "csv_parser.h"
-#include "color.h"
+//#include "color.h"
 
 #include "tcp_can.hpp"
 #include "can_node.hpp"
