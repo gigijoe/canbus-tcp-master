@@ -1,0 +1,27 @@
+package servolcm;
+
+struct position_t
+{
+	byte bus;
+	byte id;
+	int32_t position;
+	int16_t speed;
+}
+
+struct status_t
+{
+	byte bus;
+	byte id;
+	boolean online;
+	int32_t encoder_position;
+	double multi_turn_angle;
+	float voltage;
+	float current;
+	int8_t temperature;
+}
+
+struct pwm_t
+{
+	byte channel;
+	byte angle; // 0 ~ 180 degree
+}
