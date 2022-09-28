@@ -35,6 +35,8 @@
 #include "servolcm/status_t.hpp"
 #include "servolcm/pwm_t.hpp"
 
+std::condition_variable s_emergency;
+
 static lcm::LCM s_lcm("udpm://239.255.76.67:7667?ttl=1");
 
 using std::chrono::steady_clock;
@@ -197,6 +199,36 @@ static int select_stdin(long us_timeout)
 	return r;	
 }
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <poll.h>
+
+static int read_gpio(int gpio)
+{
+	char buf[64];
+	snprintf(buf, 64, "/sys/class/gpio/gpio%d/value", gpio);
+	int fd = open(buf, O_RDONLY);
+	if(fd < 0)
+		return -1;
+	
+	char valstr[3];
+	if(read(fd, valstr, 3) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	close(fd);
+
+	return atoi(valstr);
+}
+
+/*
+*
+*/
+
 #define TEST_GAP 200 // 2 degree
 
 static int test_cmd(SocketCan & socketCan, int index, int32_t pos, uint16_t speed)
@@ -318,6 +350,11 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 	if(parse_flower_csv(filename) == false)
 		return;
 	
+	if(read_gpio(26) == 1) { // Emergency Stopped !!!
+		printf("Emergency Stopped !!!\n");
+		return;
+	}
+
 	for(uint8_t i=0;i<NUM_PETAL;i++) {
 		printf("Petal[%d] : \n", i);
 		for_each(s_petals[i].begin(), s_petals[i].end(), [&](Petal const & pl)
@@ -386,6 +423,22 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 		steady_clock::time_point t2(steady_clock::now()); // T2
 		auto dt_us = duration_cast<microseconds>(t2 - t1).count();
 		printf("dt_us = %ld\n", dt_us);
+
+		std::mutex mtx;
+		std::unique_lock<std::mutex> lock(mtx);
+		auto end = steady_clock::now() + std::chrono::microseconds(_interval * 1000 - dt_us);
+		auto res = s_emergency.wait_until(lock, end);
+		if(res != std::cv_status::timeout) {
+			break; // Emergency Stop !!!
+		}
+
+		if(select_stdin(0) > 0) { // No timeout
+			char ch;
+			::read(0, &ch, 1); // Read one character in raw mode.
+			if(ch == 'q' || ch == 'Q')
+				break;
+		}
+/*
 		if(dt_us < _interval * 1000) {
 			//std::this_thread::sleep_for(std::chrono::microseconds(_interval * 1000 - dt_us));
 			if(select_stdin(_interval * 1000 - dt_us) > 0) { // 100ms timeout
@@ -395,6 +448,7 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 					break;
 			}
 		}
+*/
 	}
 	printf("Finished !!!\n");
 }
@@ -670,6 +724,50 @@ int lcm_main(int argc, char**argv)
 	return 0;
 }
 
+/*
+
+echo 26 > /sys/class/gpio/export
+echo in > /sys/class/gpio/gpio26/direction
+echo rising >/sys/class/gpio/gpio26/edge
+
+*/
+
+int gpio_main(int gpio)
+{
+    char buf[64];
+	snprintf(buf, 64, "/sys/class/gpio/gpio%d/value", gpio);
+	int fd = open(buf, O_RDONLY);
+	if(fd < 0)
+		return -1;
+
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLPRI;
+
+    lseek(fd, 0, SEEK_SET);
+
+    while(!bShutdown) {
+        int retval = poll(&pfd, 1, -1);
+        if (pfd.revents & POLLPRI) {
+
+            lseek(fd, 0, SEEK_SET);
+
+            char valstr[3];
+            retval = read(fd, valstr, 3);
+
+            if(retval > 0) {
+            	//cout << valstr << endl;
+            	if(atoi(valstr) == 1) {
+            		printf("Emergency Stopped !!!\n");
+            		s_emergency.notify_all();
+            	}
+            }
+        }
+    }
+
+    return 0;
+}
+
 int main(int argc, char**argv)
 {
 	if(signal(SIGINT, sig_handler) == SIG_ERR)
@@ -677,7 +775,11 @@ int main(int argc, char**argv)
 
 	std::thread lcm_thread(lcm_main, argc, argv);
 	
+	std::thread gpio_thread(gpio_main, 26);
+    
 	can_main(argc, argv);
+
+	gpio_thread.detach();	
 
 	lcm_thread.join();
 

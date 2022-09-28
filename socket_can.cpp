@@ -182,7 +182,7 @@ int SocketCan::Write(uint32_t id, uint8_t dlc, uint8_t *data)
 
 int SocketCan::Print(can_frame & f)
 {
-	printf("[0x%03x] ", f.can_id);
+	printf("[0x%03x] (%d) ", f.can_id, f.can_dlc);
 	printh((const uint8_t *)&f.data[0], 8);
 
 	return 0;
