@@ -75,7 +75,9 @@ class UI(QWidget):
 			for i in range(numServo):
 				self.table.setItem(i, 2, QTableWidgetItem('Unknown'))
 				self.table.item(i, 2).setBackground(QtGui.QColor(255,0,0))
-				
+				self.table.setItem(i, 3, QTableWidgetItem(''))
+				self.table.setItem(i, 4, QTableWidgetItem(''))
+				self.table.setItem(i, 5, QTableWidgetItem(''))
 
 	def about(self):
 		msgBox = QMessageBox(QMessageBox.NoIcon, 'About', 'Display real time status of all servo')

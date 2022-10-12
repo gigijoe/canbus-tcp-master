@@ -330,6 +330,7 @@ static bool parse_flower_csv(const char *filename) {
 		}
 
 		uint8_t id = atou8(&argv[0][1]);
+#if 0		
 		if(id > 0 && id <= NUM_PETAL) {
 			Petal pl;
 			pl.pitch = atof(argv[1]);
@@ -341,6 +342,20 @@ static bool parse_flower_csv(const char *filename) {
 				s_petals[id - 1].push_back(pl);
 			}
 		}
+#else
+		if(id == 1) {
+			Petal pl;
+			pl.pitch = atof(argv[1]);
+			pl.roll = atof(argv[2]);
+			pl.timestamp = atof(argv[3]);
+
+			int a = (int)roundf(pl.timestamp * 100) % 10;
+			if(a == 0) {
+				for(int i=0;i<NUM_PETAL;i++) // All petals from ID 1
+					s_petals[i].push_back(pl);
+			}			
+		}
+#endif
 	}
 
 	fclose(fp);
