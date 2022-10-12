@@ -14,6 +14,15 @@
 using namespace std;
 
 /*
+*
+* https://blog.csdn.net/aiyanzielf/article/details/111708394
+*
+* https://www.waveshare.com/2-ch-can-hat.htm
+* https://www.waveshare.com/wiki/2-CH_CAN_HAT
+*
+*/
+
+/*
  * Controller Area Network Identifier structure
  *
  * bit 0-28	: CAN identifier (11/29 bit)

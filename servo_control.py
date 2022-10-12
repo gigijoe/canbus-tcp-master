@@ -106,8 +106,10 @@ if __name__=='__main__':
 
     with dpg.window(label="Example Window", width=720, height=320):
         dpg.add_text("Servo Control")
-        tag_busid = dpg.add_combo(("1", "2", "3", "4"), label="Bus ID", default_value="1")
-        tag_canid = dpg.add_combo(("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"), label="CAN ID", default_value="1")
+        #tag_busid = dpg.add_combo(("1", "2", "3", "4"), label="Bus ID", default_value="1")
+        #tag_canid = dpg.add_combo(("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"), label="CAN ID", default_value="1")
+        tag_busid = dpg.add_combo([str(i) for i in range(1, 3)], label="Bus ID", default_value="1")
+        tag_canid = dpg.add_combo([str(i) for i in range(1, 26)], label="CAN ID", default_value="1")
         dpg.add_separator()
 
         tag_angle = dpg.add_slider_int(label="Position Control Angle (Degree)", min_value=0, max_value=359)

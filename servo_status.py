@@ -36,7 +36,7 @@ class UI(QWidget):
 			for id in range(numServoPerTcpCan):
 				self.table.setItem(bus*numServoPerTcpCan+id, 0, QTableWidgetItem(str(bus+1)))
 				self.table.setItem(bus*numServoPerTcpCan+id, 1, QTableWidgetItem(str(id+1)))
-				self.table.setItem(bus*numServoPerTcpCan+id, 2, QTableWidgetItem('Off line'))
+				self.table.setItem(bus*numServoPerTcpCan+id, 2, QTableWidgetItem('Unknown'))
 				self.table.item(bus*numServoPerTcpCan+id, 2).setBackground(QtGui.QColor(255,0,0))
 		self.table.setSelectionMode(QAbstractItemView.SingleSelection)
 		self.show()

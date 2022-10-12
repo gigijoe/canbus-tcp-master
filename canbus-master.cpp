@@ -1,16 +1,18 @@
-#include <opencv2/opencv.hpp>
-#include <opencv2/videoio.hpp>
+//#include <opencv2/opencv.hpp>
+//#include <opencv2/videoio.hpp>
 
 //#include <opencv2/cudafilters.hpp>
 //#include <opencv2/cudabgsegm.hpp>
 //#include <opencv2/cudaobjdetect.hpp>
 //#include <opencv2/cudaarithm.hpp>
 //#include <opencv2/cudaimgproc.hpp>
+#include <math.h>
 
 #include <string>
 #include <iostream>
 #include <chrono>
 #include <sstream>
+#include <algorithm>
 
 #include <thread>
 #include <mutex>
@@ -699,9 +701,10 @@ void status_publish()
 				r.temperature = cm->Temperature();
 
 				s_lcm.publish("STATUS", &r);
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			}
 		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		//std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 }
 
@@ -773,14 +776,19 @@ int main(int argc, char**argv)
 	if(signal(SIGINT, sig_handler) == SIG_ERR)
 		printf("\ncan't catch SIGINT\n");
 
+	int r, v = -20;
+	r = nice(v);
+	if(errno == -1 && errno != 0)
+		perror("nice");
+	else
+		printf("nice value is now %d\n", v);
+
 	std::thread lcm_thread(lcm_main, argc, argv);
-	
 	std::thread gpio_thread(gpio_main, 26);
     
 	can_main(argc, argv);
 
-	gpio_thread.detach();	
-
+	gpio_thread.detach();
 	lcm_thread.join();
 
 	return 0;

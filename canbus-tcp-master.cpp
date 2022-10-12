@@ -1,16 +1,18 @@
-#include <opencv2/opencv.hpp>
-#include <opencv2/videoio.hpp>
+//#include <opencv2/opencv.hpp>
+//#include <opencv2/videoio.hpp>
 
 //#include <opencv2/cudafilters.hpp>
 //#include <opencv2/cudabgsegm.hpp>
 //#include <opencv2/cudaobjdetect.hpp>
 //#include <opencv2/cudaarithm.hpp>
 //#include <opencv2/cudaimgproc.hpp>
+#include <math.h>
 
 #include <string>
 #include <iostream>
 #include <chrono>
 #include <sstream>
+#include <algorithm>
 
 #include <thread>
 #include <mutex>
@@ -775,9 +777,10 @@ void status_publish()
 				r.temperature = cm->Temperature();
 
 				s_lcm.publish("STATUS", &r);
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			}
 		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		//std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 }
 
