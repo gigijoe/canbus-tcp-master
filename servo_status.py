@@ -3,6 +3,8 @@ import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QMessageBox
 from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QAbstractItemView
 from PyQt5 import QtGui, QtCore
+from PyQt5.QtCore import QTimer
+import time
 
 import lcm
 from threading import Thread 
@@ -41,6 +43,12 @@ class UI(QWidget):
 		self.table.setSelectionMode(QAbstractItemView.SingleSelection)
 		self.show()
 
+		self.timer = QTimer(self)
+		self.timer.timeout.connect(self.timer_cb)
+		self.timer.start(1000)  # this will emit every second 
+
+		self.start_time = time.time()
+
 	def status_handler(self, channel, data):
 		msg = status_t.decode(data)
 		if msg.bus == 0 or msg.id == 0:
@@ -48,16 +56,26 @@ class UI(QWidget):
 		bus = msg.bus-1
 		id = msg.id-1
 		status = 'On line' if msg.online else 'Off line'
+		self.table.setItem(bus*25+id, 2, QTableWidgetItem(status))
 		if msg.online:
 			#status = 'On line'
-			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(255,0,0))
+			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(0,255,0))
 		else:
 			#status = 'Off line'
-			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(0,255,0))
-		self.table.setItem(bus*25+id, 2, QTableWidgetItem(status))
+			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(255,0,0))
 		self.table.setItem(bus*25+id, 3, QTableWidgetItem(str(round(msg.multi_turn_angle, 2))))
 		self.table.setItem(bus*25+id, 4, QTableWidgetItem(str(round(msg.current, 3))))
 		self.table.setItem(bus*25+id, 5, QTableWidgetItem(str(msg.temperature)))
+
+		self.start_time = time.time()
+
+	def timer_cb(self):
+		if time.time() - self.start_time > 2:
+			print('timeout !!!')
+			for i in range(numServo):
+				self.table.setItem(i, 2, QTableWidgetItem('Unknown'))
+				self.table.item(i, 2).setBackground(QtGui.QColor(255,0,0))
+				
 
 	def about(self):
 		msgBox = QMessageBox(QMessageBox.NoIcon, 'About', 'Display real time status of all servo')

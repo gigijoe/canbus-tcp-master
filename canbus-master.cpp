@@ -24,8 +24,9 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
 
-#include "modbus/modbus.h"
+//#include "modbus/modbus.h"
 #include "csv_parser.h"
 //#include "color.h"
 
@@ -428,6 +429,9 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 
 		std::mutex mtx;
 		std::unique_lock<std::mutex> lock(mtx);
+
+		dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
+		
 		auto end = steady_clock::now() + std::chrono::microseconds(_interval * 1000 - dt_us);
 		auto res = s_emergency.wait_until(lock, end);
 		if(res != std::cv_status::timeout) {
