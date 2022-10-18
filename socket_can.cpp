@@ -153,6 +153,8 @@ int SocketCan::Read(vector<can_frame> & vf, uint32_t timeout)
 					printf("bus error (may flood!)\n");
 				if(f.can_id & CAN_ERR_RESTARTED )
 					printf("controller restarted\n");
+			} else {
+				vf.push_back(f);
 			}
 		}
 		return nbytes;

@@ -857,7 +857,47 @@ int M8010L::Reset()
 
 	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes
+#if 1
+// 速度环比例系数
 
+	const uint16_t velKp = 500; // 0 ~ 10000 数值越大刚性越强
+
+// 主机写命令符：
+// 0x2F=写一个字节。
+// 0x2B=写两个字节。
+// 0x23=写 4 个字节。
+	data[0] = 0x23; // 写4个字节 
+	data[1] = 0xf9; // Index 0x60f9
+	data[2] = 0x60; 
+	data[3] = 0x01; // Subindex 0x01
+	data[4] = velKp & 0xff; 
+	data[5] = (velKp >> 8) & 0xff;
+	data[6] = 0x00; 
+	data[7] = 0x00; 
+
+	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
+		0x08, data); // Data length is 8 bytes
+
+// 速度环积分时间
+
+	const uint16_t velKi = 200; // 2~2000ms 数值越小刚性越强
+
+// 主机写命令符：
+// 0x2F=写一个字节。
+// 0x2B=写两个字节。
+// 0x23=写 4 个字节。
+	data[0] = 0x23; // 写4个字节 
+	data[1] = 0xf9; // Index 0x60f9
+	data[2] = 0x60; 
+	data[3] = 0x02; // Subindex 0x02
+	data[4] = velKi & 0xff; 
+	data[5] = (velKi >> 8) & 0xff;
+	data[6] = 0x00; 
+	data[7] = 0x00; 
+
+	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
+		0x08, data); // Data length is 8 bytes
+#endif
 	return r;
 }
 
@@ -976,9 +1016,9 @@ int M8010L::WritePosition(int32_t position, uint16_t max_speed) // unit : 0.01 d
 
 	// 0~360 degree <-> 0~1638400 / 1 RPM (Round Per Minute)
 	int64_t _position = (int64_t)position * 1638400 / 36000; // encoder position
-	uint16_t _max_speed = (max_speed + 6) / 6 * 50; // dps to rpm (50 reducer)
-	if(_max_speed < 50)
-		_max_speed = 50;
+	uint16_t _max_speed = (max_speed + 6) / 6 * 200; // dps to rpm (50 reducer)
+	if(_max_speed < 200)
+		_max_speed = 200;
 
 	int r = 0;
 	uint8_t data[8] = {0};

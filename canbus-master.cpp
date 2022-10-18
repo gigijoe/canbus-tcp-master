@@ -98,6 +98,7 @@ Position Kp = 50 / Ki = 50
 				socketCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
 				socketCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
 			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 
 #ifdef STATUS_THREAD // Status thread causes DNET400
@@ -105,27 +106,27 @@ Position Kp = 50 / Ki = 50
 		std::future<void> futureObj = exitSignal.get_future();
 		
 		std::thread t([&socketCan](std::future<void> futureObj) -> void { // Capture local variable 'socketCan' by reference
-			const long long _interval = 500; // ms
+			const long long _interval = 10; // ms
 			while(!bShutdown) {
 				//for(uint8_t i=0;i<socketCan.NumberDevices();i++) {
 				for(int8_t i=socketCan.NumberDevices()-1;i>=0;i--) {
 					if(socketCan.Device(i) == nullptr)
 						continue;
-					socketCan.Device(i)->ReadStatus(); 
-				}
+					socketCan.Device(i)->ReadStatus();
 
-				if(futureObj.wait_for(std::chrono::milliseconds(_interval)) == std::future_status::ready)
-					break;
+					if(futureObj.wait_for(std::chrono::milliseconds(_interval)) == std::future_status::ready)
+						break;
+				}
 
 				//for(uint8_t i=0;i<socketCan.NumberDevices();i++) {
 				for(int8_t i=socketCan.NumberDevices()-1;i>=0;i--) {
 					if(socketCan.Device(i) == nullptr)
 						continue;
 					socketCan.Device(i)->ReadPosition();
+		
+					if(futureObj.wait_for(std::chrono::milliseconds(_interval)) == std::future_status::ready)
+						break;
 				}
-				
-				if(futureObj.wait_for(std::chrono::milliseconds(_interval)) == std::future_status::ready)
-					break;
 			}
 		}, std::move(futureObj));
 #endif
@@ -330,14 +331,14 @@ static bool parse_flower_csv(const char *filename) {
 		}
 
 		uint8_t id = atou8(&argv[0][1]);
-#if 0		
+#if 1
 		if(id > 0 && id <= NUM_PETAL) {
 			Petal pl;
 			pl.pitch = atof(argv[1]);
 			pl.roll = atof(argv[2]);
 			pl.timestamp = atof(argv[3]);
 
-			int a = (int)roundf(pl.timestamp * 100) % 10;
+			int a = (int)roundf(pl.timestamp * 100) % 5;
 			if(a == 0) {
 				s_petals[id - 1].push_back(pl);
 			}
@@ -349,7 +350,7 @@ static bool parse_flower_csv(const char *filename) {
 			pl.roll = atof(argv[2]);
 			pl.timestamp = atof(argv[3]);
 
-			int a = (int)roundf(pl.timestamp * 100) % 10;
+			int a = (int)roundf(pl.timestamp * 100) % 5;
 			if(a == 0) {
 				for(int i=0;i<NUM_PETAL;i++) // All petals from ID 1
 					s_petals[i].push_back(pl);
@@ -390,7 +391,7 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 	uint32_t d_pitch[NUM_PETAL] = {0};
 	uint32_t d_roll[NUM_PETAL] = {0};
 	bool bFinished = false;
-	const long long _interval = 100; // 100 ms
+	const long long _interval = 50; // 100 ms
 	while(!bShutdown && !bFinished) {
 		steady_clock::time_point t1(steady_clock::now()); // T1
 

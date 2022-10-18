@@ -197,8 +197,8 @@ private:
 	void OnRead(uint32_t id, uint8_t data[8]);
 
 public:
-	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) {}
-	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) {}
+	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) { m_reverseDirection = true; }
+	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) { m_reverseDirection = true; }
 
 	int Read(TcpCanFrame & rf);
 	int Read(can_frame & rf);
