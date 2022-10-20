@@ -113,7 +113,7 @@ public:
 	inline float Current() const { return m_current; }
 	inline int8_t Temperature() const { return m_temperature; }
 
-	inline void ReverseDirection(bool yesNo) { m_reverseDirection = yesNo; }
+	inline void ReverseDirection(bool yesNo = true) { m_reverseDirection = yesNo; }
 };
 
 class RMDx6 : public CanMotor { // V2 protocol
@@ -197,8 +197,8 @@ private:
 	void OnRead(uint32_t id, uint8_t data[8]);
 
 public:
-	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) { m_reverseDirection = true; }
-	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) { m_reverseDirection = true; }
+	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) {}
+	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) {}
 
 	int Read(TcpCanFrame & rf);
 	int Read(can_frame & rf);

@@ -101,6 +101,7 @@ Position Kp = 50 / Ki = 50
 				tcpCan.Device(i)->WriteDeceleration(3000); // 100 ~ 60000 dps/s
 				tcpCan.Device(i)->WritePosKpKi(100, 5); // Kp, Ki from 0 ~ 255
 			} else if(typeid(T) == typeid(M8010L)) {
+				tcpCan.Device(i)->ReverseDirection();
 				tcpCan.Device(i)->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
 				tcpCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
 				tcpCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.

@@ -94,6 +94,7 @@ Position Kp = 50 / Ki = 50
 				socketCan.Device(i)->WriteDeceleration(3000); // 100 ~ 60000 dps/s
 				socketCan.Device(i)->WritePosKpKi(100, 5); // Kp, Ki from 0 ~ 255
 			} else if(typeid(T) == typeid(M8010L)) {
+				socketCan.Device(i)->ReverseDirection();
 				socketCan.Device(i)->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
 				socketCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
 				socketCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
@@ -279,7 +280,8 @@ typedef struct {
 } Petal;
 
 #define NUM_PETAL 25
-static vector<Petal> s_petals[NUM_PETAL];
+#define NUM_EXTRA_PETAL 7
+static vector<Petal> s_petals[NUM_PETAL + NUM_EXTRA_PETAL];
 
 static bool parse_flower_csv(const char *filename) {
 	FILE *fp = fopen(filename, "r");
@@ -332,7 +334,8 @@ static bool parse_flower_csv(const char *filename) {
 
 		uint8_t id = atou8(&argv[0][1]);
 #if 1
-		if(id > 0 && id <= NUM_PETAL) {
+		//if(id > 0 && id <= NUM_PETAL) {
+		if(id > 0 && id <= (NUM_PETAL + NUM_EXTRA_PETAL)) {
 			Petal pl;
 			pl.pitch = atof(argv[1]);
 			pl.roll = atof(argv[2]);
@@ -373,7 +376,7 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 		printf("Emergency Stopped !!!\n");
 		return;
 	}
-
+#if 0
 	for(uint8_t i=0;i<NUM_PETAL;i++) {
 		printf("Petal[%d] : \n", i);
 		for_each(s_petals[i].begin(), s_petals[i].end(), [&](Petal const & pl)
@@ -382,16 +385,16 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 			printf("\t%.2f, %.2f, %.2f\n", pl.pitch, pl.roll, pl.timestamp);
 		});
 	}
-
-	vector<Petal>::iterator ppls[NUM_PETAL];
-	for(uint8_t i=0;i<NUM_PETAL;i++) {
+#endif
+	vector<Petal>::iterator ppls[NUM_PETAL + NUM_EXTRA_PETAL];
+	for(uint8_t i=0;i<NUM_PETAL + NUM_EXTRA_PETAL;i++) {
 		ppls[i] = s_petals[i].begin();
 	}
 
-	uint32_t d_pitch[NUM_PETAL] = {0};
-	uint32_t d_roll[NUM_PETAL] = {0};
+	uint32_t d_pitch[NUM_PETAL] = {0}; // delta movement between two positions
+	uint32_t d_roll[NUM_PETAL] = {0}; // delta movement between two positions
 	bool bFinished = false;
-	const long long _interval = 50; // 100 ms
+	const long long _interval = 50; // 50 ms
 	while(!bShutdown && !bFinished) {
 		steady_clock::time_point t1(steady_clock::now()); // T1
 
@@ -404,18 +407,22 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 	1 : RMD X6V3 x 25
 */
 			float p0 = ppls[i]->pitch;
-			//if(i < 2)
 			s_socketCan[0].Device(i)->WritePosition((int32_t)(p0 * 100), d_pitch[i] & 0xffff); // 0.01 degree
 			//if(i == 0)
 			//	printf("s_socketCan[0].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p0, d_pitch[i]);
 			
 			float p1 = ppls[i]->roll;
-			//if(i < 2)
 			s_socketCan[1].Device(i)->WritePosition((int32_t)(p1 * 100), d_roll[i] & 0xffff); // 0.01 degree
 			//if(i == 0)
 			//	printf("s_socketCan[1].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p1, d_roll[i]);
 
 			++ppls[i];
+
+			if(ppls[i] == s_petals[i].end()) {
+				d_pitch[i] = 0;
+				d_roll[i] = 0;
+				continue;
+			}
 
 			d_pitch[i] = abs((int32_t)((ppls[i]->pitch - p0) * (1000 / _interval))); // dps
 			d_roll[i] = abs((int32_t)((ppls[i]->roll - p1)  * (1000 / _interval))); // dps
@@ -423,6 +430,22 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 			//std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
+		for(uint8_t i=0;i<NUM_EXTRA_PETAL;i++) {
+			uint8_t ei = i + NUM_PETAL;
+			if(ppls[ei] == s_petals[ei].end())
+				continue;
+
+			servolcm::pwm_t r;
+			r.channel = i;
+			r.angle = ppls[ei]->pitch;
+
+			s_lcm.publish("PWM", &r);
+			++ppls[ei];
+		}
+#if 1
+		auto dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
+		printf("dt_us = %ld\n", dt_us);
+#endif
 		for(uint8_t i=0;i<NUM_PETAL;i++) {
 			if(ppls[i] == s_petals[i].end()) {
 				if(replayCount > 0) {
@@ -439,26 +462,23 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 			}
 		}
 
-		steady_clock::time_point t2(steady_clock::now()); // T2
-		auto dt_us = duration_cast<microseconds>(t2 - t1).count();
-		printf("dt_us = %ld\n", dt_us);
-
-		std::mutex mtx;
-		std::unique_lock<std::mutex> lock(mtx);
-
-		dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
-		
-		auto end = steady_clock::now() + std::chrono::microseconds(_interval * 1000 - dt_us);
-		auto res = s_emergency.wait_until(lock, end);
-		if(res != std::cv_status::timeout) {
-			break; // Emergency Stop !!!
-		}
-
 		if(select_stdin(0) > 0) { // No timeout
 			char ch;
 			::read(0, &ch, 1); // Read one character in raw mode.
 			if(ch == 'q' || ch == 'Q')
 				break;
+		}
+
+		std::mutex mtx;
+		std::unique_lock<std::mutex> lock(mtx);
+
+		dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
+		//printf("dt_us = %ld\n", dt_us);
+		
+		auto end = steady_clock::now() + std::chrono::microseconds(_interval * 1000 - dt_us);
+		auto res = s_emergency.wait_until(lock, end);
+		if(res != std::cv_status::timeout) {
+			break; // Emergency Stop !!!
 		}
 /*
 		if(dt_us < _interval * 1000) {

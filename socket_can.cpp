@@ -42,7 +42,8 @@ int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 {
 	ssystem("sudo ifconfig can%d down", port);
 	ssystem("sudo ip link set can%d up type can bitrat %d", port, bitrate);
-	ssystem("sudo ifconfig can%d txqueuelen 100", port);
+	//ssystem("sudo ifconfig can%d txqueuelen 100", port);
+	ssystem("sudo ifconfig can%d txqueuelen 65536", port);
 
 	struct sockaddr_can addr; 
 	struct ifreq ifr; 
