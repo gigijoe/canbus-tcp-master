@@ -37,9 +37,6 @@ int CanNode::_Read(TcpCanFrame & f)
 
 void CanNode::OnRx(TcpCanFrame & f)
 {
-	if(m_active == false)
-		return;
-
 	m_rxTcpCanFrameQueue.push(f);
 
 	m_lastRxTimeStamp = steady_clock::now();
@@ -58,9 +55,6 @@ int CanNode::_Read(can_frame & f)
 
 void CanNode::OnRx(can_frame & f)
 {
-	if(m_active == false)
-		return;
-
 	m_rxCanFrameQueue.push(f);
 
 	m_lastRxTimeStamp = steady_clock::now();
@@ -74,9 +68,6 @@ double CanNode::LastRxDuration()
 
 int CanNode::_Write(uint32_t id, uint8_t dlc, uint8_t *data)
 {
-	if(m_active == false)
-		return 0;
-
 	int r = 0;
 	if(m_tcpCan) {
 		r = m_tcpCan->Write(id, dlc, data);
@@ -297,6 +288,9 @@ int RMDx6::ReadPosition()
 
 int RMDx6::WritePosition(int32_t position, uint16_t max_speed)
 {
+	if(m_active == false)
+		return 0;
+
 	if(m_maxPos > m_minPos) {
 		if(position > m_maxPos)
 			position = m_maxPos;
@@ -583,6 +577,9 @@ int RMDx6v3::ReadPosition()
 #if 1
 int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 {
+	if(m_active == false)
+		return 0;
+
 	if(m_maxPos > m_minPos) {
 		if(position > m_maxPos)
 			position = m_maxPos;
@@ -622,6 +619,9 @@ int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 #else
 int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 {
+	if(m_active == false)
+		return 0;
+
 	if(m_reverseDirection)
 		position = 0 - position;
 
@@ -1067,6 +1067,9 @@ int M8010L::ReadPosition()
 
 int M8010L::WritePosition(int32_t position, uint16_t max_speed) // unit : 0.01 degree / 1 dps (Degree Per Second)
 {
+	if(m_active == false)
+		return 0;
+
 	if(m_maxPos > m_minPos) {
 		if(position > m_maxPos)
 			position = m_maxPos;

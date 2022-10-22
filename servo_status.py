@@ -55,11 +55,15 @@ class UI(QWidget):
 			return
 		bus = msg.bus-1
 		id = msg.id-1
-		status = 'On line' if msg.online else 'Off line'
-		self.table.setItem(bus*25+id, 2, QTableWidgetItem(status))
 		if msg.online:
-			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(0,255,0)) # Green
+			if msg.active:
+				self.table.setItem(bus*25+id, 2, QTableWidgetItem('On line'))
+				self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(0,255,0)) # Green
+			else:
+				self.table.setItem(bus*25+id, 2, QTableWidgetItem('Deactive'))
+				self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(255,255,0)) # Yellow
 		else:
+			self.table.setItem(bus*25+id, 2, QTableWidgetItem('Off line'))
 			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(255,0,0)) # Red
 
 		self.table.setItem(bus*25+id, 3, QTableWidgetItem(str(round(msg.multi_turn_angle, 2))))
