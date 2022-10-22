@@ -98,6 +98,7 @@ Position Kp = 50 / Ki = 50
 				socketCan.Device(i)->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
 				socketCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
 				socketCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
+				//socketCan.Device(i)->PositionLimitation(0, -10000); // 0 to -100 degree
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
@@ -533,6 +534,8 @@ static void can_cmd(vector<string> & tokens)
 			s_socketCan[busIndex].Device(motorIndex)->ReadPID();
 		} else if(tokens[3] == "origin") {
 			s_socketCan[busIndex].Device(motorIndex)->WritePosition(0, 10); // Go to zero position whit speed 10 dps
+		} else if(tokens[3] == "zero") {
+			s_socketCan[busIndex].Device(motorIndex)->WriteCurrentPositionAsZero();
 		} else if(tokens[3] == "test") {
 			if(tokens.size() >= 5) {
 				int32_t pos = stoi(tokens[4]);
@@ -574,7 +577,7 @@ void status_cmd()
 
 	for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
 		printf("=========================================================================================\n");
-		printf("         TCPCAN %2.2u      |  Current  |  Multi Turn Angle  \n", i);
+		printf("         CAN %2.2u      |  Current  |  Multi Turn Angle  \n", i);
 		printf("=========================================================================================\n");      
 		for(uint8_t j=0;j<s_socketCan[i].NumberDevices();j++) {
 			if(s_socketCan[i].Device(j)->LastRxDuration() > CanNode::timeout)
@@ -733,6 +736,7 @@ void status_publish()
 				servolcm::status_t r;
 				r.bus = i+1;
 				r.id = j+1;
+				r.active = cm->IsActive();
 				r.online = cm->LastRxDuration() <= CanNode::timeout;
 				r.encoder_position = cm->EncoderPosition();
 				r.multi_turn_angle = cm->MultiTurnAngle();
@@ -745,6 +749,10 @@ void status_publish()
 			}
 		}
 		//std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+		for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
+			printf("CAN %2.2u - Load %d%%\n", i, s_socketCan[i].BusLoad());
+		}
 	}
 }
 

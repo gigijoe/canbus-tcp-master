@@ -3,6 +3,8 @@
 
 #include <thread>
 
+#include <math.h>
+
 #include "tcp_can.hpp"
 #include "can_node.hpp"
 
@@ -35,6 +37,9 @@ int CanNode::_Read(TcpCanFrame & f)
 
 void CanNode::OnRx(TcpCanFrame & f)
 {
+	if(m_active == false)
+		return;
+
 	m_rxTcpCanFrameQueue.push(f);
 
 	m_lastRxTimeStamp = steady_clock::now();
@@ -53,6 +58,9 @@ int CanNode::_Read(can_frame & f)
 
 void CanNode::OnRx(can_frame & f)
 {
+	if(m_active == false)
+		return;
+
 	m_rxCanFrameQueue.push(f);
 
 	m_lastRxTimeStamp = steady_clock::now();
@@ -66,6 +74,9 @@ double CanNode::LastRxDuration()
 
 int CanNode::_Write(uint32_t id, uint8_t dlc, uint8_t *data)
 {
+	if(m_active == false)
+		return 0;
+
 	int r = 0;
 	if(m_tcpCan) {
 		r = m_tcpCan->Write(id, dlc, data);
@@ -286,6 +297,13 @@ int RMDx6::ReadPosition()
 
 int RMDx6::WritePosition(int32_t position, uint16_t max_speed)
 {
+	if(m_maxPos > m_minPos) {
+		if(position > m_maxPos)
+			position = m_maxPos;
+		else if(position < m_minPos)
+			position = m_minPos;
+	}
+
 	if(m_reverseDirection)
 		position = 0 - position;
 
@@ -349,6 +367,20 @@ int RMDx6::WriteAcceleration(uint16_t accelerate) // 1 dps/s / 0 ~ 10000
 int RMDx6::WritePosKpKi(uint16_t kp, uint16_t ki)
 {
 	return WritePID((uint8_t)(kp & 0xff), (uint8_t)(ki & 0xff), 0, 0, 0, 0);
+}
+
+int RMDx6::WriteCurrentPositionAsZero()
+{
+	int r = 0;
+
+	uint8_t data[8] = {0};
+	data[0] = 0x64;
+	r = Write(data);
+
+	data[0] = 0x76;
+	r = Write(data);
+
+	return r;
 }
 
 /*
@@ -551,6 +583,13 @@ int RMDx6v3::ReadPosition()
 #if 1
 int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 {
+	if(m_maxPos > m_minPos) {
+		if(position > m_maxPos)
+			position = m_maxPos;
+		else if(position < m_minPos)
+			position = m_minPos;
+	}
+
 	if(m_reverseDirection)
 		position = 0 - position;
 #if 0
@@ -659,6 +698,20 @@ int RMDx6v3::WritePosKpKi(uint16_t kp, uint16_t ki)
 	return WritePID((uint8_t)(kp & 0xff), (uint8_t)(ki & 0xff), 100, 5, 50, 50);
 }
 
+int RMDx6v3::WriteCurrentPositionAsZero()
+{
+	int r = 0;
+
+	uint8_t data[8] = {0};
+	data[0] = 0x64;
+	r = Write(data);
+
+	data[0] = 0x76;
+	r = Write(data);
+
+	return r;
+}
+
 int RMDx6v3::WriteAll(RMDx6v3 & dev, uint8_t data[8])
 {
 	return dev._Write(0x280, 0x08, data);
@@ -700,6 +753,9 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 			m_statusBits.bits = ((int16_t)data[1] << 8) + data[0];
 			{
 				// TODO : Handle status bits ...
+				if(m_statusBits.warning) {
+
+				}
 			}
 
 			{
@@ -857,7 +913,7 @@ int M8010L::Reset()
 
 	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes
-#if 1
+
 // 速度环比例系数
 
 	const uint16_t velKp = 500; // 0 ~ 10000 数值越大刚性越强
@@ -897,7 +953,7 @@ int M8010L::Reset()
 
 	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes
-#endif
+
 	return r;
 }
 
@@ -1011,6 +1067,13 @@ int M8010L::ReadPosition()
 
 int M8010L::WritePosition(int32_t position, uint16_t max_speed) // unit : 0.01 degree / 1 dps (Degree Per Second)
 {
+	if(m_maxPos > m_minPos) {
+		if(position > m_maxPos)
+			position = m_maxPos;
+		else if(position < m_minPos)
+			position = m_minPos;
+	}
+
 	if(m_reverseDirection)
 		position = 0 - position;
 
@@ -1059,7 +1122,7 @@ int M8010L::WritePosition(int32_t position, uint16_t max_speed) // unit : 0.01 d
 
 int M8010L::WriteTorque(uint16_t torque)
 {
-	const uint16_t alarm_timeout = 3; // Alarm if reach maximum current over 3 seconds 
+	const uint16_t alarm_timeout = 2; // Alarm if reach maximum current over 2 seconds 
 
 	if(torque > 1000)
 		torque = 1000; // 10A
@@ -1193,4 +1256,11 @@ int M8010L::WriteHeartBeatInterval(uint16_t ms)
 		0x08, data); // Data length is 8 bytes
 
 	return r;
+}
+
+int M8010L::WriteCurrentPositionAsZero()
+{
+	// TODO : Get command from WIN10 application
+
+	return 0;
 }

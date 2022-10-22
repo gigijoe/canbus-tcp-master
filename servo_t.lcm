@@ -12,6 +12,7 @@ struct status_t
 {
 	byte bus;
 	byte id;
+	boolean active;
 	boolean online;
 	int32_t encoder_position;
 	double multi_turn_angle;

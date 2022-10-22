@@ -23,7 +23,7 @@ INCLUDE_DIRECTORIES(${LCM_INCLUDE_DIRS})
 #cuda_add_executable(canbus-master canbus-master.cpp read-line.c socket_can.cpp can_node.cpp csv_parser.c atox.c)
 
 add_executable(canbus-tcp-master canbus-tcp-master.cpp read-line.c tcp_can.cpp can_node.cpp csv_parser.c atox.c)
-add_executable(canbus-master canbus-master.cpp read-line.c socket_can.cpp can_node.cpp csv_parser.c atox.c)
+add_executable(canbus-master canbus-master.cpp read-line.c socket_can.cpp can_node.cpp csv_parser.c atox.c canframelen.c)
 
 #set(canbus-tcp-master canbus-tcp-master PROPERTY CUDA_STANDARD 11)
 #set(canbus-master canbus-master PROPERTY CUDA_STANDARD 11)

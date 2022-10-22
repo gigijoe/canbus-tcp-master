@@ -43,10 +43,19 @@ typedef uint32_t can_err_mask_t;
 class SocketCan : public CanBus {
 protected:
 	char *m_devName;
+	uint32_t m_bitrate;
 	int m_socketFd;
 
+	struct {
+		uint32_t dbitrate;
+		uint32_t recv_frames;
+		uint32_t recv_bits_total;
+		uint32_t recv_bits_payload;
+		uint32_t recv_bits_dbitrate;
+	} m_stat;
+
 public:
-	SocketCan() : CanBus(), m_devName(nullptr), m_socketFd(-1) {}
+	SocketCan() : CanBus(), m_devName(nullptr), m_bitrate(0), m_socketFd(-1) {}
 	~SocketCan() {
 		if(m_socketFd != -1)
 			close(m_socketFd);
@@ -60,6 +69,8 @@ public:
 	int Write(uint32_t id, uint8_t dlc, uint8_t *data);
 
 	int Print(can_frame & f);
+
+	int BusLoad(); // Return percentage of bus loading
 };
 
 #endif

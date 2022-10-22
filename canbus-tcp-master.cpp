@@ -105,6 +105,7 @@ Position Kp = 50 / Ki = 50
 				tcpCan.Device(i)->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
 				tcpCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
 				tcpCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
+				//socketCan.Device(i)->PositionLimitation(0, -10000); // 0 to -100 degree
 			}
 		}
 
@@ -818,6 +819,7 @@ void status_publish()
 				servolcm::status_t r;
 				r.bus = i+1;
 				r.id = j+1;
+				r.active = cm->IsActive();
 				r.online = cm->LastRxDuration() <= CanNode::timeout;
 				r.encoder_position = cm->EncoderPosition();
 				r.multi_turn_angle = cm->MultiTurnAngle();

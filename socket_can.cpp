@@ -16,6 +16,7 @@
 #include <linux/can/raw.h>
 #include <linux/can/error.h>
 
+#include "canframelen.h"
 #include "socket_can.hpp"
 
 #include <stdarg.h>
@@ -157,6 +158,16 @@ int SocketCan::Read(vector<can_frame> & vf, uint32_t timeout)
 			} else {
 				vf.push_back(f);
 			}
+
+			static enum cfl_mode mode = CFL_WORSTCASE;
+
+			m_stat.recv_frames++;
+			m_stat.recv_bits_payload += f.can_dlc * 8;
+			m_stat.recv_bits_dbitrate += can_frame_dbitrate_length(
+					&f, mode, sizeof(f));
+			m_stat.recv_bits_total += can_frame_length(&f,
+								    mode, nbytes);
+
 		}
 		return nbytes;
 	}
@@ -189,4 +200,22 @@ int SocketCan::Print(can_frame & f)
 	printh((const uint8_t *)&f.data[0], 8);
 
 	return 0;
+}
+
+int SocketCan::BusLoad()
+{
+	int percent;
+
+	if(m_bitrate > 0)
+		percent = ((m_stat.recv_bits_total-m_stat.recv_bits_dbitrate) * 100) / m_bitrate
+			+ (m_stat.recv_bits_dbitrate * 100) / m_stat.dbitrate;
+	else
+		percent = 0;
+
+	m_stat.recv_frames = 0;
+	m_stat.recv_bits_total = 0;
+	m_stat.recv_bits_dbitrate = 0;
+	m_stat.recv_bits_payload = 0;
+
+	return percent;
 }

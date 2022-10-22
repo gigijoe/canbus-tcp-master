@@ -20,10 +20,10 @@ class UI(QWidget):
 		super().__init__()
 		# Init UI
 		self.setWindowTitle('Servo Status')
-		self.resize(800, 600)
+		self.resize(640, 960)
 		self.table = QTableWidget(self)
 		self.table.move(12, 12)
-		self.table.resize(640, 480)
+		self.table.resize(600, 920)
 		self.table.setColumnCount(6)
 		self.table.setColumnWidth(0, 24)
 		self.table.setColumnWidth(1, 24)
@@ -58,14 +58,24 @@ class UI(QWidget):
 		status = 'On line' if msg.online else 'Off line'
 		self.table.setItem(bus*25+id, 2, QTableWidgetItem(status))
 		if msg.online:
-			#status = 'On line'
-			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(0,255,0))
+			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(0,255,0)) # Green
 		else:
-			#status = 'Off line'
-			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(255,0,0))
+			self.table.item(bus*25+id, 2).setBackground(QtGui.QColor(255,0,0)) # Red
+
 		self.table.setItem(bus*25+id, 3, QTableWidgetItem(str(round(msg.multi_turn_angle, 2))))
-		self.table.setItem(bus*25+id, 4, QTableWidgetItem(str(round(msg.current, 3))))
+		self.table.setItem(bus*25+id, 4, QTableWidgetItem(str(round(msg.current, 3))))		
+		if msg.current > 1.0:
+			self.table.item(bus*25+id, 4).setBackground(QtGui.QColor(128,0,128)) # Pupel
+		else:
+			self.table.item(bus*25+id, 4).setBackground(QtGui.QColor(255,255,255)) # White
+
 		self.table.setItem(bus*25+id, 5, QTableWidgetItem(str(msg.temperature)))
+		if msg.temperature > 70:
+			self.table.item(bus*25+id, 5).setBackground(QtGui.QColor(255,0,0)) # Red
+		elif msg.temperature > 60:
+			self.table.item(bus*25+id, 5).setBackground(QtGui.QColor(255,165,0)) # Orange
+		else:
+			self.table.item(bus*25+id, 5).setBackground(QtGui.QColor(255,255,255)) # White
 
 		self.start_time = time.time()
 

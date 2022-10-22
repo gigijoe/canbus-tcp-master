@@ -43,14 +43,18 @@ protected:
 
 	steady_clock::time_point m_lastRxTimeStamp;
 
+	bool m_active;
+
 	int _Read(TcpCanFrame & rf);
 	int _Read(can_frame & rf);
 
 	int _Write(uint32_t id, uint8_t dlc, uint8_t *data);
 
 public:
-	CanNode(TcpCan & tcpCan, uint8_t id) : m_tcpCan(&tcpCan), m_socketCan(nullptr), m_id(id), m_lastRxTimeStamp() {}
-	CanNode(SocketCan & socketCan, uint8_t id) : m_tcpCan(nullptr), m_socketCan(&socketCan), m_id(id), m_lastRxTimeStamp() {}
+	CanNode(TcpCan & tcpCan, uint8_t id) : m_tcpCan(&tcpCan), m_socketCan(nullptr), 
+		m_id(id), m_lastRxTimeStamp(), m_active(true) {}
+	CanNode(SocketCan & socketCan, uint8_t id) : m_tcpCan(nullptr), m_socketCan(&socketCan), 
+		m_id(id), m_lastRxTimeStamp(), m_active(true) {}
 
 	virtual int Read(TcpCanFrame & rf) = 0;
 	virtual int Read(can_frame & rf) = 0;
@@ -61,8 +65,12 @@ public:
 	static const double timeout; // ms
 	double LastRxDuration();
 
-	inline TcpCan *TcpCanInstance() { return m_tcpCan; }
-	inline SocketCan *SocketCanInstance() { return m_socketCan; }
+	inline TcpCan *TcpCanInstance() const { return m_tcpCan; }
+	inline SocketCan *SocketCanInstance() const { return m_socketCan; }
+
+	inline const bool IsActive() const { return m_active; }
+	inline void Active() { m_active = true; }
+	inline void Deactive() { m_active = false; }
 };
 
 class CanMotor : public CanNode {
@@ -75,17 +83,18 @@ protected:
 	int32_t m_encoderPosition; 
 	double m_multiTurnAngle;
 	bool m_reverseDirection;
+	int32_t m_maxPos, m_minPos;
 
 public:
 	CanMotor(TcpCan & tcpCan, uint8_t id) : CanNode(tcpCan, id), m_temperature(-40), 
 		m_posKp(255), m_posKi(255), m_velKp(255), m_velKi(255), m_curKp(255), m_curKi(255),
 		m_voltage(0.0f), m_current(0.0f), m_velocity(0), 
-		m_encoderPosition(0), m_multiTurnAngle(0.0f), m_reverseDirection(false) {}
+		m_encoderPosition(0), m_multiTurnAngle(0.0f), m_reverseDirection(false), m_maxPos(0), m_minPos(0) {}
 
 	CanMotor(SocketCan & socketCan, uint8_t id) : CanNode(socketCan, id), m_temperature(-40), 
 		m_posKp(255), m_posKi(255), m_velKp(255), m_velKi(255), m_curKp(255), m_curKi(255),
 		m_voltage(0.0f), m_current(0.0f), m_velocity(0), 
-		m_encoderPosition(0), m_multiTurnAngle(0.0f), m_reverseDirection(false) {}
+		m_encoderPosition(0), m_multiTurnAngle(0.0f), m_reverseDirection(false), m_maxPos(0), m_minPos(0) {}
 
 	virtual int Reset() = 0;
 	virtual int ReadStatus(uint8_t id = 0) = 0;
@@ -99,6 +108,7 @@ public:
 	virtual int WriteDeceleration(uint16_t decelerate) { printf("Setup deceleration NOT support !!!\n"); return 0; }
 	virtual int WritePosKpKi(uint16_t kp, uint16_t ki) = 0;
 	virtual int WriteHeartBeatInterval(uint16_t ms) { printf("Heart beat NOT support !!!\n"); return 0; }
+	virtual int WriteCurrentPositionAsZero() = 0;
 
 	void PrintStatus() {
 		printf("Temp : %d\n", m_temperature);
@@ -114,6 +124,10 @@ public:
 	inline int8_t Temperature() const { return m_temperature; }
 
 	inline void ReverseDirection(bool yesNo = true) { m_reverseDirection = yesNo; }
+	inline void PositionLimitation(int32_t maxPos, int32_t minPos) {
+		m_maxPos = maxPos;
+		m_minPos = minPos;
+	}
 };
 
 class RMDx6 : public CanMotor { // V2 protocol
@@ -139,6 +153,7 @@ public:
 	int WriteBrake(bool onOff);
 	int WriteAcceleration(uint16_t accelerate);
 	int WritePosKpKi(uint16_t kp, uint16_t ki);
+	int WriteCurrentPositionAsZero();
 };
 
 class RMDx6v3 : public CanMotor { // V3 protocol
@@ -165,6 +180,7 @@ public:
 	int WriteAcceleration(uint16_t accelerate);
 	int WriteDeceleration(uint16_t decelerate);
 	int WritePosKpKi(uint16_t kp, uint16_t ki);
+	int WriteCurrentPositionAsZero();
 
 	static int WriteAll(RMDx6v3 & dev, uint8_t data[8]);
 	static int ResetAll(RMDx6v3 & dev);
@@ -197,8 +213,8 @@ private:
 	void OnRead(uint32_t id, uint8_t data[8]);
 
 public:
-	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) {}
-	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) {}
+	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id), m_statusBits() {}
+	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id), m_statusBits() {}
 
 	int Read(TcpCanFrame & rf);
 	int Read(can_frame & rf);
@@ -212,9 +228,9 @@ public:
 	int WriteTorque(uint16_t torque); // unit : 0.01A
 	int WriteBrake(bool onOff);
 	int WriteAcceleration(uint16_t accelerate);
-
 	int WritePosKpKi(uint16_t kp, uint16_t ki);
 	int WriteHeartBeatInterval(uint16_t ms);
+	int WriteCurrentPositionAsZero();
 };
 
 #endif
