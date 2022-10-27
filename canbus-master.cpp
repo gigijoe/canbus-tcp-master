@@ -61,7 +61,34 @@ void sig_handler(int signo)
 	}
 }
 
-#include "can_node.hpp"
+template <class T>
+void DeviceInitialize(CanMotor *cm)
+{
+	cm->Reset();
+	cm->WriteBrake(false);
+	cm->WriteTorque(100); // 1A
+	if(typeid(T) == typeid(RMDx6)) {
+// X6 default 
+/*
+Current Kp = 100 / Ki = 100
+Speed Kp = 50 / Ki = 40
+Position Kp = 50 / Ki = 50
+*/
+		cm->WritePID(50, 50, 10, 8, 100, 100); // Kp, Ki from 0 ~ 255
+	} else if(typeid(T) == typeid(RMDx6v3)) {
+		cm->WriteAcceleration(6000); // 100 ~ 60000 dps/s
+		cm->WriteDeceleration(3000); // 100 ~ 60000 dps/s
+		cm->WritePosKpKi(100, 5); // Kp, Ki from 0 ~ 255
+	} else if(typeid(T) == typeid(M8010L)) {
+		cm->ReverseDirection();
+		cm->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
+		cm->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
+		cm->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
+		//cm->PositionLimitation(0, -10000); // 0 to -100 degree
+	}
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+}
+
 #include <future>
 
 #define STATUS_THREAD 
@@ -78,29 +105,7 @@ void SocketCanThread(SocketCan & socketCan, uint16_t port, uint32_t bitrate, uin
 	while(!bShutdown) {
 		//for(uint8_t i=0;i<socketCan.NumberDevices();i++) {
 		for(int8_t i=socketCan.NumberDevices()-1;i>=0;i--) {
-			socketCan.Device(i)->Reset();
-			socketCan.Device(i)->WriteBrake(false);
-			socketCan.Device(i)->WriteTorque(100); // 1A
-			if(typeid(T) == typeid(RMDx6)) {
-// X6 default 
-/*
-Current Kp = 100 / Ki = 100
-Speed Kp = 50 / Ki = 40
-Position Kp = 50 / Ki = 50
-*/
-				socketCan.Device(i)->WritePID(50, 50, 10, 8, 100, 100); // Kp, Ki from 0 ~ 255
-			} else if(typeid(T) == typeid(RMDx6v3)) {	
-				socketCan.Device(i)->WriteAcceleration(6000); // 100 ~ 60000 dps/s
-				socketCan.Device(i)->WriteDeceleration(3000); // 100 ~ 60000 dps/s
-				socketCan.Device(i)->WritePosKpKi(100, 5); // Kp, Ki from 0 ~ 255
-			} else if(typeid(T) == typeid(M8010L)) {
-				socketCan.Device(i)->ReverseDirection();
-				socketCan.Device(i)->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
-				socketCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
-				socketCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
-				//socketCan.Device(i)->PositionLimitation(0, -10000); // 0 to -100 degree
-			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			DeviceInitialize<T>(socketCan.Device(i));
 		}
 
 #ifdef STATUS_THREAD // Status thread causes DNET400
@@ -108,7 +113,7 @@ Position Kp = 50 / Ki = 50
 		std::future<void> futureObj = exitSignal.get_future();
 		
 		std::thread t([&socketCan](std::future<void> futureObj) -> void { // Capture local variable 'socketCan' by reference
-			const long long _interval = 10; // ms
+			const long long _interval = 20; // ms
 			while(!bShutdown) {
 				//for(uint8_t i=0;i<socketCan.NumberDevices();i++) {
 				for(int8_t i=socketCan.NumberDevices()-1;i>=0;i--) {
@@ -591,6 +596,12 @@ void status_cmd()
 		}
 		printf("\033[0m"); /* Default color */
 	}
+
+	for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
+		printf("=========================================================================================\n");
+		printf("CAN %2.2u - Load %d%%\n", i, s_socketCan[i].BusLoad());
+		printf("=========================================================================================\n");
+	}
 }
 
 void reset_cmd()
@@ -623,6 +634,7 @@ Management Commands:\n\
   pwm [channel] [angle]\n\
   play [file]\n\
   origin\n\
+  zero\n\
   status\n\
   exit\n\
 \n\
@@ -633,7 +645,7 @@ int can_main(int argc, char**argv)
 	std::thread socketCan1Thread(SocketCanThread<M8010L>, std::ref(s_socketCan[0]), 0, 1000000, 
 		NUM_DEV_PER_SOCKETCAN); // 25 M8010L motors
 
-	std::thread socketCan2Thread(SocketCanThread<RMDx6v3>, std::ref(s_socketCan[1]), 1, 1000000, 
+	std::thread socketCan2Thread(SocketCanThread<RMDx6v3>, std::ref(s_socketCan[1]), 1, 500000, 
 		NUM_DEV_PER_SOCKETCAN); // 25 RMDx6 motors
 
 	while(!bShutdown) {
@@ -749,10 +761,6 @@ void status_publish()
 			}
 		}
 		//std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-		for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
-			printf("CAN %2.2u - Load %d%%\n", i, s_socketCan[i].BusLoad());
-		}
 	}
 }
 

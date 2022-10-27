@@ -50,6 +50,8 @@ protected:
 
 	int _Write(uint32_t id, uint8_t dlc, uint8_t *data);
 
+	void DelayMs(uint32_t ms);
+
 public:
 	CanNode(TcpCan & tcpCan, uint8_t id) : m_tcpCan(&tcpCan), m_socketCan(nullptr), 
 		m_id(id), m_lastRxTimeStamp(), m_active(true) {}

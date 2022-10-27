@@ -41,6 +41,12 @@ static int ssystem(const char *fmt, ...)
 
 int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 {
+	char devName[32];
+	snprintf(devName, 16, "can%d@", port, bitrate);
+	if(m_devName)
+		free(m_devName);
+	m_devName = strdup(devName);
+
 	ssystem("sudo ifconfig can%d down", port);
 	ssystem("sudo ip link set can%d up type can bitrat %d", port, bitrate);
 	//ssystem("sudo ifconfig can%d txqueuelen 100", port);
@@ -137,6 +143,7 @@ int SocketCan::Read(vector<can_frame> & vf, uint32_t timeout)
 			Print(f);
 #endif
 			if(f.can_id & CAN_ERR_FLAG ) {
+				printf("%s\n", m_devName);
 				if(f.can_id & CAN_ERR_TX_TIMEOUT)
 					printf("TX timeout (by netdevice driver)\n");
 				if(f.can_id & CAN_ERR_LOSTARB   )

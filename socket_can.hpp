@@ -59,6 +59,8 @@ public:
 	~SocketCan() {
 		if(m_socketFd != -1)
 			close(m_socketFd);
+		if(m_devName)
+			free(m_devName);
 	}
 
 	int Connect(uint16_t port, uint32_t bitrate);

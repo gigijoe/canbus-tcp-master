@@ -78,6 +78,11 @@ int CanNode::_Write(uint32_t id, uint8_t dlc, uint8_t *data)
 	return r;
 }
 
+void CanNode::DelayMs(uint32_t ms)
+{
+	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
 /*
 *
 */
@@ -401,7 +406,7 @@ void RMDx6v3::OnRead(uint8_t data[8])
 				 ((uint32_t)data[6] << 16) +
 				 ((uint32_t)data[5] << 8) +
 				 (uint32_t)data[4];
-			debug_printf("RMDx6[%d] : m_encoderPosition = %d\n", m_id, m_encoderPosition); 
+			debug_printf("RMDx6v3[%d] : m_encoderPosition = %d\n", m_id, m_encoderPosition); 
 			break;
 		case 0x92: // Read Multi Turn Angle
 			m_multiTurnAngle = static_cast<double>(((int32_t)data[7] << 24) +
@@ -410,7 +415,7 @@ void RMDx6v3::OnRead(uint8_t data[8])
 				 data[4]) * 0.01f;
 			if(m_reverseDirection)
 				m_multiTurnAngle = 0 - m_multiTurnAngle;
-			debug_printf("RMDx6[%d] : multi turn angle = %lf\n", m_id, m_multiTurnAngle);
+			debug_printf("RMDx6v3[%d] : multi turn angle = %lf\n", m_id, m_multiTurnAngle);
 			break;
 		case 0x9A: // Read Status1
 			m_temperature = data[1];
@@ -442,8 +447,8 @@ void RMDx6v3::OnRead(uint8_t data[8])
 					debug_printf("M[%d] Encoder calibration error !!!\n", m_id);
 				}
 			}
-			debug_printf("RMDx6[%d] : m_temperature = %d\n", m_id, m_temperature);
-			debug_printf("RMDx6[%d] : m_voltage = %f\n", m_id, m_voltage); // 0.1V
+			debug_printf("RMDx6v3[%d] : m_temperature = %d\n", m_id, m_temperature);
+			debug_printf("RMDx6v3[%d] : m_voltage = %f\n", m_id, m_voltage); // 0.1V
 			break;
 		case 0x9C: // Read Status2
 		case 0xA1: // Write torque
@@ -458,10 +463,10 @@ void RMDx6v3::OnRead(uint8_t data[8])
 			m_multiTurnAngle = (double)(((int16_t)data[7] << 8) + data[6]);
 			if(m_reverseDirection)
 				m_multiTurnAngle = 0 - m_multiTurnAngle;
-			debug_printf("RMDx6[%d] : m_temperature = %d\n", m_id, m_temperature);
-			debug_printf("RMDx6[%d] : m_current = %f\n", m_id, m_current);
-			debug_printf("RMDx6[%d] : m_velocity = %d\n", m_id, m_velocity); // 1 dps
-			debug_printf("RMDx6[%d] : multi turn angle = %d\n", m_id, (((int16_t)data[7] << 8) + data[6])); // 1 degree / +-32767 degree
+			debug_printf("RMDx6v3[%d] : m_temperature = %d\n", m_id, m_temperature);
+			debug_printf("RMDx6v3[%d] : m_current = %f\n", m_id, m_current);
+			debug_printf("RMDx6v3[%d] : m_velocity = %d\n", m_id, m_velocity); // 1 dps
+			debug_printf("RMDx6v3[%d] : multi turn angle = %d\n", m_id, (((int16_t)data[7] << 8) + data[6])); // 1 degree / +-32767 degree
 			break;
 	}	
 }
@@ -488,7 +493,7 @@ int RMDx6v3::Read(can_frame & rf)
 		return -1;
 
 	if(m_id != (rf.can_id & 0x1f) || // ID 1~32
-			(rf.can_id & 0xffffffe0) != 0x140)
+			(rf.can_id & 0xffffffe0) != 0x240)
 		return 0; // Nothing to do, handle next frame
 
 	OnRead(&rf.data[0]);
@@ -706,6 +711,8 @@ int RMDx6v3::WriteCurrentPositionAsZero()
 	data[0] = 0x64;
 	r = Write(data);
 
+	//DelayMs(10);
+
 	data[0] = 0x76;
 	r = Write(data);
 
@@ -754,7 +761,7 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 			{
 				// TODO : Handle status bits ...
 				if(m_statusBits.warning) {
-
+					debug_printf("M8010L[%d] : Warning !!!\n", m_id);
 				}
 			}
 
@@ -781,6 +788,7 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 				case 0x60: // 写成功应答
 					break;
 				case 0x80: // 错误
+					printf("M8010L[%d] : Response error !!!\n");
 					break;
 				case 0x4f: // 读回复一个字节
 					break;
@@ -792,6 +800,8 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 			if(data[1] == 0x12 && data[2] == 0x26 &&data[3] == 0x00) { // 系统温度
 				m_temperature = data[4];
 				debug_printf("M8010L[%d] : m_temperature = %d\n", m_id, m_temperature);
+				//uint16_t v = ((int16_t)data[5] << 8) + data[4];
+				//printf("M8010L[%d] : m_temperature = %d\n", m_id, v);
 			} else if(data[1] == 0x64 && data[2] == 0x60 &&data[3] == 0x00) {
 				// 0~360 degree <-> 0~1638400 / 1 RPM (Round Per Minute)
 				/*
@@ -1263,7 +1273,31 @@ int M8010L::WriteHeartBeatInterval(uint16_t ms)
 
 int M8010L::WriteCurrentPositionAsZero()
 {
-	// TODO : Get command from WIN10 application
+	int r = 0;
 
-	return 0;
+	uint8_t data[8] = {0};
+// 主机写命令符：
+// 0x2F=写一个字节。
+// 0x2B=写两个字节。
+// 0x23=写 4 个字节。
+	data[0] = 0x2B; // 写 2 个字节 
+	data[1] = 0x0A; // Index 0x1017
+	data[2] = 0x26; 
+	data[3] = 0x00; // Subindex 0x00
+	data[4] = 0x70; 
+	data[5] = 0xEA;
+	data[6] = 0x00; 
+	data[7] = 0x00; 
+
+	r = _Write(0x700 + m_id, // SDO : 0x700 + ID(1~127)
+		0x08, data); // Data length is 8 bytes
+
+	DelayMs(1000);
+
+	data[4] = 0x70; 
+
+	r = _Write(0x700 + m_id, // SDO : 0x700 + ID(1~127)
+		0x08, data); // Data length is 8 bytes
+
+	return r;
 }
