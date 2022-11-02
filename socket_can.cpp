@@ -41,11 +41,11 @@ static int ssystem(const char *fmt, ...)
 
 int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 {
-	char devName[32];
-	snprintf(devName, 16, "can%d@", port, bitrate);
-	if(m_devName)
-		free(m_devName);
-	m_devName = strdup(devName);
+	char busName[32];
+	snprintf(busName, 32, "can%u@%d", port, bitrate);
+	if(m_busName)
+		free(m_busName);
+	m_busName = strdup(busName);
 
 	ssystem("sudo ifconfig can%d down", port);
 	ssystem("sudo ip link set can%d up type can bitrat %d", port, bitrate);
@@ -143,7 +143,7 @@ int SocketCan::Read(vector<can_frame> & vf, uint32_t timeout)
 			Print(f);
 #endif
 			if(f.can_id & CAN_ERR_FLAG ) {
-				printf("%s\n", m_devName);
+				printf("%s\n", m_busName);
 				if(f.can_id & CAN_ERR_TX_TIMEOUT)
 					printf("TX timeout (by netdevice driver)\n");
 				if(f.can_id & CAN_ERR_LOSTARB   )
@@ -162,10 +162,12 @@ int SocketCan::Read(vector<can_frame> & vf, uint32_t timeout)
 					printf("bus error (may flood!)\n");
 				if(f.can_id & CAN_ERR_RESTARTED )
 					printf("controller restarted\n");
+
+				m_flag = f.can_id;
 			} else {
 				vf.push_back(f);
 			}
-
+#if 0
 			static enum cfl_mode mode = CFL_WORSTCASE;
 
 			m_stat.recv_frames++;
@@ -174,7 +176,7 @@ int SocketCan::Read(vector<can_frame> & vf, uint32_t timeout)
 					&f, mode, sizeof(f));
 			m_stat.recv_bits_total += can_frame_length(&f,
 								    mode, nbytes);
-
+#endif
 		}
 		return nbytes;
 	}

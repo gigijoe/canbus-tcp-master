@@ -104,9 +104,9 @@ void RMDx6::OnRead(uint8_t data[8])
 			break;
 		case 0x9A: // Read Status1
 			m_temperature = data[1];
-			m_voltage = (float)(((uint16_t)data[4] << 8) + data[3]) * 0.1f; // 0.1V 
+			m_voltage = (float)(((uint16_t)data[4] << 8) | data[3]) * 0.1f; // 0.1V 
 			{
-				uint16_t err = ((uint16_t)data[7] << 8) + data[6];
+				uint16_t err = ((uint16_t)data[7] << 8) | data[6];
 				if(err & (1 << 1)) {
 					debug_printf("M[%d] Blocking !!!\n", m_id);
 				}
@@ -136,9 +136,9 @@ void RMDx6::OnRead(uint8_t data[8])
 			debug_printf("RMDx6[%d] : m_voltage = %f\n", m_id, m_voltage); // 0.1V
 			break;
 		case 0x90:
-			debug_printf("RMDx6[%d] : encoder position = %u\n", m_id, (((uint16_t)data[3] << 8) + data[2]));
-			debug_printf("RMDx6[%d] : encoder original position = %u\n", m_id, (((uint16_t)data[5] << 8) + data[4]));
-			debug_printf("RMDx6[%d] : encoder zero offset = %u\n", m_id, (((uint16_t)data[7] << 8) + data[6]));
+			debug_printf("RMDx6[%d] : encoder position = %u\n", m_id, (((uint16_t)data[3] << 8) | data[2]));
+			debug_printf("RMDx6[%d] : encoder original position = %u\n", m_id, (((uint16_t)data[5] << 8) | data[4]));
+			debug_printf("RMDx6[%d] : encoder zero offset = %u\n", m_id, (((uint16_t)data[7] << 8) | data[6]));
 			break;
 		case 0x92: // Read Multi Turn Angle
 // V2.0 protocol
@@ -170,8 +170,8 @@ void RMDx6::OnRead(uint8_t data[8])
 					v = -2048;
 				m_current = v * 33.0f / 2048;
 			}
-			m_velocity = ((int16_t)data[5] << 8) + data[4];
-			m_encoderPosition = (((int32_t)data[7] << 8) + data[6]); // 0~65535
+			m_velocity = ((int16_t)data[5] << 8) | data[4];
+			m_encoderPosition = (((int32_t)data[7] << 8) | data[6]); // 0~65535
 			debug_printf("RMDx6[%d] : m_temperature = %d\n", m_id, m_temperature);
 			debug_printf("RMDx6[%d] : m_current = %f\n", m_id, m_current);
 			debug_printf("RMDx6[%d] : m_velocity = %d\n", m_id, m_velocity); // 1 dps
@@ -231,6 +231,17 @@ int RMDx6::Reset()
 	uint8_t data[8] = {0};
 	data[0] = 0x76;
 	r = Write(&data[0]);
+
+	return r;
+}
+
+int RMDx6::Shutdown()
+{
+	int r = 0;
+
+	uint8_t data[8] = {0};
+	data[0] = 0x80; // Shutdown
+	r = Write(data);
 
 	return r;
 }
@@ -382,6 +393,11 @@ int RMDx6::WriteCurrentPositionAsZero()
 	return r;
 }
 
+int RMDx6::WriteMaximumCurrent(uint16_t torque)
+{
+	return 0;
+}
+
 /*
 *
 */
@@ -402,16 +418,28 @@ void RMDx6v3::OnRead(uint8_t data[8])
 			m_posKi = data[7];
 			break;
 		case 0x60:
+/*		
 			m_encoderPosition = (int32_t)((uint32_t)data[7] << 24) +
 				 ((uint32_t)data[6] << 16) +
 				 ((uint32_t)data[5] << 8) +
 				 (uint32_t)data[4];
+*/
+			m_encoderPosition = (int32_t)((uint32_t)data[7] << 24) |
+				 ((uint32_t)data[6] << 16) |
+				 ((uint32_t)data[5] << 8) |
+				 (uint32_t)data[4];
 			debug_printf("RMDx6v3[%d] : m_encoderPosition = %d\n", m_id, m_encoderPosition); 
 			break;
 		case 0x92: // Read Multi Turn Angle
+/*			
 			m_multiTurnAngle = static_cast<double>(((int32_t)data[7] << 24) +
 				 ((int32_t)data[6] << 16) +
 				 ((int32_t)data[5] << 8) +
+				 data[4]) * 0.01f;
+*/
+			m_multiTurnAngle = static_cast<double>(((int32_t)data[7] << 24) |
+				 ((int32_t)data[6] << 16) |
+				 ((int32_t)data[5] << 8) |
 				 data[4]) * 0.01f;
 			if(m_reverseDirection)
 				m_multiTurnAngle = 0 - m_multiTurnAngle;
@@ -419,9 +447,9 @@ void RMDx6v3::OnRead(uint8_t data[8])
 			break;
 		case 0x9A: // Read Status1
 			m_temperature = data[1];
-			m_voltage = (float)(((uint16_t)data[5] << 8) + data[4]) * 0.1f; // 0.1V
+			m_voltage = (float)(((uint16_t)data[5] << 8) | data[4]) * 0.1f; // 0.1V
 			{
-				uint16_t err = ((uint16_t)data[7] << 8) + data[6];
+				uint16_t err = ((uint16_t)data[7] << 8) | data[6];
 				if(err & (1 << 1)) {
 					debug_printf("M[%d] Blocking !!!\n", m_id);
 				}
@@ -455,18 +483,21 @@ void RMDx6v3::OnRead(uint8_t data[8])
 		case 0xA3: // Write position
 		case 0xA4: // Write position
 			m_temperature = data[1];
-			//m_current = static_cast<float>(((int16_t)data[3] << 8) + data[2]) * 0.01; // 0.01A
-			m_current = static_cast<float>(*(int16_t *)&data[2]) * 0.01; // 0.01A
-			//m_velocity = ((int16_t)data[5] << 8) + data[4];
-			m_velocity = *(int16_t *)&data[4];
+			m_current = static_cast<float>((int16_t)(data[3] << 8) | data[2]) * 0.01; // 0.01A
+			//m_current = static_cast<float>(*(int16_t *)&data[2]) * 0.01; // 0.01A
+			m_velocity = ((int16_t)(data[5] << 8) | data[4]);
+			//m_velocity = *(int16_t *)&data[4];
 			// = (((int16_t)data[7] << 8) + data[6]); // +-32767 degree
-			m_multiTurnAngle = (double)(((int16_t)data[7] << 8) + data[6]);
+			
+			m_multiTurnAngle = (double)((int16_t)(data[7] << 8) | data[6]);
+			//m_multiTurnAngle = (double)(*(int16_t *)&data[6]);
 			if(m_reverseDirection)
 				m_multiTurnAngle = 0 - m_multiTurnAngle;
+			
 			debug_printf("RMDx6v3[%d] : m_temperature = %d\n", m_id, m_temperature);
 			debug_printf("RMDx6v3[%d] : m_current = %f\n", m_id, m_current);
 			debug_printf("RMDx6v3[%d] : m_velocity = %d\n", m_id, m_velocity); // 1 dps
-			debug_printf("RMDx6v3[%d] : multi turn angle = %d\n", m_id, (((int16_t)data[7] << 8) + data[6])); // 1 degree / +-32767 degree
+			debug_printf("RMDx6v3[%d] : multi turn angle = %lf\n", m_id, m_multiTurnAngle); // 1 degree / +-32767 degree
 			break;
 	}	
 }
@@ -519,6 +550,17 @@ int RMDx6v3::Reset()
 	data[2] = 0x00;
 	data[3] = 0x00;	
 	data[4] = 0x01; // Disable CAN ID filter
+	r = Write(data);
+
+	return r;
+}
+
+int RMDx6v3::Shutdown()
+{
+	int r = 0;
+
+	uint8_t data[8] = {0};
+	data[0] = 0x80; // Shutdown
 	r = Write(data);
 
 	return r;
@@ -601,7 +643,6 @@ int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 
 	if(_max_speed < 8)
 		_max_speed = 8;
-
 #else
 	uint16_t _max_speed = 400;
 #endif
@@ -627,6 +668,13 @@ int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 	if(m_active == false)
 		return 0;
 
+	if(m_maxPos > m_minPos) {
+		if(position > m_maxPos)
+			position = m_maxPos;
+		else if(position < m_minPos)
+			position = m_minPos;
+	}
+
 	if(m_reverseDirection)
 		position = 0 - position;
 
@@ -649,7 +697,19 @@ int RMDx6v3::WritePosition(int32_t position, uint16_t max_speed)
 
 int RMDx6v3::WriteTorque(uint16_t torque)
 {
-	return 0;
+	int r = 0;
+
+	uint8_t data[8] = {0};
+	data[0] = 0xA1; // Torque
+	data[1] = 0x00; 
+	data[2] = 0;
+	data[3] = 0;
+	data[4] = torque & 0xFF;
+	data[5] = (torque >> 8) & 0xFF;
+	data[6] = 0;
+	data[7] = 0;
+
+	return r;
 }
 
 int RMDx6v3::WriteBrake(bool onOff)
@@ -711,12 +771,17 @@ int RMDx6v3::WriteCurrentPositionAsZero()
 	data[0] = 0x64;
 	r = Write(data);
 
-	//DelayMs(10);
+	DelayMs(1000);
 
 	data[0] = 0x76;
 	r = Write(data);
 
 	return r;
+}
+
+int RMDx6v3::WriteMaximumCurrent(uint16_t torque)
+{
+	return 0;
 }
 
 int RMDx6v3::WriteAll(RMDx6v3 & dev, uint8_t data[8])
@@ -757,7 +822,7 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 	switch(id & 0xffffff80) { // Strip out device ID
 		case 0x180: // TPDO1
 		case 0x280: // TPDO2
-			m_statusBits.bits = ((int16_t)data[1] << 8) + data[0];
+			m_statusBits.bits = ((int16_t)data[1] << 8) | data[0];
 			{
 				// TODO : Handle status bits ...
 				if(m_statusBits.warning) {
@@ -768,10 +833,10 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 			{
 				// 0~360 degree <-> 0~1638400 / 1 RPM (Round Per Minute)
 				/*
-				int32_t pos32 = (int32_t)((uint32_t)data[3] << 24) + 
-					((uint32_t)data[2] << 16) + 
-					((uint32_t)data[1] << 8) + 
-					(uint32_t)data[0];
+				int32_t pos32 = (int32_t)((int32_t)data[3] << 24) | 
+					((int32_t)data[2] << 16) | 
+					((int32_t)data[1] << 8) | 
+					data[0];
 				*/
 				int32_t pos32 = *((int32_t *)&data[0]);
 				//debug_printf("\n\n0x%02x 0x%02x 0x%02x 0x%02x\n\n", data[7], data[6], data[5], data[4]);
@@ -788,7 +853,7 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 				case 0x60: // 写成功应答
 					break;
 				case 0x80: // 错误
-					printf("M8010L[%d] : Response error !!!\n");
+					printf("M8010L[%d] : Response error !!!\n", m_id);
 					break;
 				case 0x4f: // 读回复一个字节
 					break;
@@ -800,15 +865,15 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 			if(data[1] == 0x12 && data[2] == 0x26 &&data[3] == 0x00) { // 系统温度
 				m_temperature = data[4];
 				debug_printf("M8010L[%d] : m_temperature = %d\n", m_id, m_temperature);
-				//uint16_t v = ((int16_t)data[5] << 8) + data[4];
+				//int16_t v = ((int16_t)data[5] << 8) | data[4];
 				//printf("M8010L[%d] : m_temperature = %d\n", m_id, v);
 			} else if(data[1] == 0x64 && data[2] == 0x60 &&data[3] == 0x00) {
 				// 0~360 degree <-> 0~1638400 / 1 RPM (Round Per Minute)
 				/*
-				int32_t pos32 = (int32_t)((uint32_t)data[7] << 24) + 
-					((uint32_t)data[6] << 16) + 
-					((uint32_t)data[5] << 8) + 
-					(uint32_t)data[4];
+				int32_t pos32 = (int32_t)((int32_t)data[7] << 24) | 
+					((int32_t)data[6] << 16) | 
+					((int32_t)data[5] << 8) | 
+					data[4];
 				*/
 				int32_t pos32 = *((int32_t *)&data[4]);
 				//debug_printf("\n\n0x%02x 0x%02x 0x%02x 0x%02x\n\n", data[7], data[6], data[5], data[4]);
@@ -820,13 +885,13 @@ void M8010L::OnRead(uint32_t id, uint8_t data[8])
 					m_multiTurnAngle = 0 - m_multiTurnAngle;
 				debug_printf("M8010L[%d] : m_multiTurnAngle = %lf\n", m_id, m_multiTurnAngle);
 			} else if(data[1] == 0x78 && data[2] == 0x60 &&data[3] == 0x00) { // 实际电流
-				uint32_t a = ((uint32_t)data[5] << 8) + data[4];
+				uint32_t a = ((uint32_t)data[5] << 8) | data[4];
 				m_current = ((float)a / 200.0f); // a / 200 A
 				debug_printf("M8010L[%d] : m_current = %f\n", m_id, m_current); // 1.0 A
 			} else if(data[1] == 0x79 && data[2] == 0x60 &&data[3] == 0x00) { // 系统电压
 				//uint32_t v = ((int32_t)data[5] << 8) + data[4];
 				//m_voltage = (v * 100 / 327) & 0xffff;
-				uint16_t v = ((int16_t)data[5] << 8) + data[4];
+				uint16_t v = ((int16_t)data[5] << 8) | data[4];
 				m_voltage = (float)v / 327.0f;
 				debug_printf("M8010L[%d] : m_voltage = %f\n", m_id, m_voltage); // 1.0 V 
 			} else if(data[1] == 0x60 && data[2] == 0x60 &&data[3] == 0x00) {
@@ -913,7 +978,7 @@ int M8010L::Reset()
 // 0x2B=写两个字节。
 // 0x23=写 4 个字节。
 	data[0] = 0x23; // 写4个字节 
-	data[1] = 0x81; // Index 0x6083
+	data[1] = 0x81; // Index 0x6081
 	data[2] = 0x60; 
 	data[3] = 0x00; // Subindex 0x00
 	data[4] = accelerate & 0xff; 
@@ -960,6 +1025,35 @@ int M8010L::Reset()
 	data[5] = (velKi >> 8) & 0xff;
 	data[6] = 0x00; 
 	data[7] = 0x00; 
+
+	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
+		0x08, data); // Data length is 8 bytes
+
+	return r;
+}
+
+int M8010L::Shutdown()
+{
+	int r = 0;
+
+	uint8_t data[8] = {0};
+// 主机写命令符：
+// 0x2F=写一个字节。
+// 0x2B=写两个字节。
+// 0x23=写 4 个字节。
+	data[0] = 0x2B; // 写两个字节
+	data[1] = 0x40; // Index 0x6040
+	data[2] = 0x60; 
+	data[3] = 0x00; // Subindex 0x00
+// 工作模式:
+// 1：位置模式
+// 3：速度模式
+// 6：找原点模式
+// 7：基于 CANopen 的运动插补	
+	data[4] = 0x00; // 全部停止
+	data[5] = 0x00;
+	data[6] = 0x00;
+	data[7] = 0x00;
 
 	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes
@@ -1135,31 +1229,7 @@ int M8010L::WritePosition(int32_t position, uint16_t max_speed) // unit : 0.01 d
 
 int M8010L::WriteTorque(uint16_t torque)
 {
-	const uint16_t alarm_timeout = 2; // Alarm if reach maximum current over 2 seconds 
-
-	if(torque > 1000)
-		torque = 1000; // 10A
-	torque = torque * 10 + alarm_timeout; // 10000 -> 10.000A
-
-	int r = 0;
-	uint8_t data[8] = {0};
-// 主机写命令符：
-// 0x2F=写一个字节。
-// 0x2B=写两个字节。
-// 0x23=写 4 个字节。
-	data[0] = 0x2b; // 写两个字节 
-	data[1] = 0x1d; // Index 0x261d
-	data[2] = 0x26; 
-	data[3] = 0x00; // Subindex 0x00
-	data[4] = torque & 0xFF; 
-	data[5] = (torque >> 8) & 0xFF;
-	data[6] = 0x00; 
-	data[7] = 0x00;
-
-	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
-		0x08, data); // Data length is 8 bytes
-
-	return r;
+	return 0;
 }
 
 int M8010L::WriteBrake(bool onOff)
@@ -1289,14 +1359,43 @@ int M8010L::WriteCurrentPositionAsZero()
 	data[6] = 0x00; 
 	data[7] = 0x00; 
 
-	r = _Write(0x700 + m_id, // SDO : 0x700 + ID(1~127)
+	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes
 
 	DelayMs(1000);
 
 	data[4] = 0x70; 
 
-	r = _Write(0x700 + m_id, // SDO : 0x700 + ID(1~127)
+	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
+		0x08, data); // Data length is 8 bytes
+
+	return r;
+}
+
+int M8010L::WriteMaximumCurrent(uint16_t amp001)
+{
+	const uint16_t alarm_timeout = 2; // Alarm if reach maximum current over 2 seconds 
+
+	if(amp001 > 1000)
+		amp001 = 1000; // 10A
+	amp001 = amp001 * 10 + alarm_timeout; // 10000 -> 10.000A
+
+	int r = 0;
+	uint8_t data[8] = {0};
+// 主机写命令符：
+// 0x2F=写一个字节。
+// 0x2B=写两个字节。
+// 0x23=写 4 个字节。
+	data[0] = 0x2b; // 写两个字节 
+	data[1] = 0x1d; // Index 0x261d
+	data[2] = 0x26; 
+	data[3] = 0x00; // Subindex 0x00
+	data[4] = amp001 & 0xFF; 
+	data[5] = (amp001 >> 8) & 0xFF;
+	data[6] = 0x00; 
+	data[7] = 0x00;
+
+	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes
 
 	return r;

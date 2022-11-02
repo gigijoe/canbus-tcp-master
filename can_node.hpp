@@ -58,6 +58,8 @@ public:
 	CanNode(SocketCan & socketCan, uint8_t id) : m_tcpCan(nullptr), m_socketCan(&socketCan), 
 		m_id(id), m_lastRxTimeStamp(), m_active(true) {}
 
+	virtual const char *Name() = 0;
+
 	virtual int Read(TcpCanFrame & rf) = 0;
 	virtual int Read(can_frame & rf) = 0;
 
@@ -99,6 +101,7 @@ public:
 		m_encoderPosition(0), m_multiTurnAngle(0.0f), m_reverseDirection(false), m_maxPos(0), m_minPos(0) {}
 
 	virtual int Reset() = 0;
+	virtual int Shutdown() = 0;
 	virtual int ReadStatus(uint8_t id = 0) = 0;
 	virtual int ReadPID() = 0;
 	virtual int WritePID(uint8_t posKp, uint8_t posKi, uint8_t velKp, uint8_t velKi, uint8_t curKp, uint8_t curKi) = 0;
@@ -111,16 +114,17 @@ public:
 	virtual int WritePosKpKi(uint16_t kp, uint16_t ki) = 0;
 	virtual int WriteHeartBeatInterval(uint16_t ms) { printf("Heart beat NOT support !!!\n"); return 0; }
 	virtual int WriteCurrentPositionAsZero() = 0;
+	virtual int WriteMaximumCurrent(uint16_t amp001) = 0;
 
 	void PrintStatus() {
-		printf("Temp : %d\n", m_temperature);
-		printf("Voltage : %f\n", m_voltage);
+		printf("Angle : %f\n", m_multiTurnAngle);
+		//printf("Voltage : %f\n", m_voltage);
 		printf("Current : %f\n", m_current);
-		printf("Position : %u / Kp : %d, Ki : %d\n", m_encoderPosition, m_posKp, m_posKi);
+		printf("Temp : %d\n", m_temperature);
 	}
 
 	inline int32_t EncoderPosition() const { return m_encoderPosition; }
-	inline double MultiTurnAngle() const { return m_multiTurnAngle; }
+	inline double MultiTurnAngle() const { return m_multiTurnAngle; } // degree 
 	inline float Voltage() const { return m_voltage; }
 	inline float Current() const { return m_current; }
 	inline int8_t Temperature() const { return m_temperature; }
@@ -142,10 +146,13 @@ public:
 	RMDx6(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) {}
 	RMDx6(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) {}
 
+	const char *Name() { return "RMDx6"; }
+
 	int Read(TcpCanFrame & rf);
 	int Read(can_frame & rf);
 
 	int Reset();
+	int Shutdown();
 	int ReadStatus(uint8_t id = 0);
 	int ReadPID();
 	int WritePID(uint8_t posKp, uint8_t posKi, uint8_t velKp, uint8_t velKi, uint8_t curKp, uint8_t curKi);
@@ -156,6 +163,7 @@ public:
 	int WriteAcceleration(uint16_t accelerate);
 	int WritePosKpKi(uint16_t kp, uint16_t ki);
 	int WriteCurrentPositionAsZero();
+	int WriteMaximumCurrent(uint16_t amp001);
 };
 
 class RMDx6v3 : public CanMotor { // V3 protocol
@@ -168,10 +176,13 @@ public:
 	RMDx6v3(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id) {}
 	RMDx6v3(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id) {}
 
+	const char *Name() { return "RMDx6v3"; }
+
 	int Read(TcpCanFrame & rf);
 	int Read(can_frame & rf);
 
 	int Reset();
+	int Shutdown();
 	int ReadStatus(uint8_t id = 0);
 	int ReadPID();
 	int WritePID(uint8_t posKp, uint8_t posKi, uint8_t velKp, uint8_t velKi, uint8_t curKp, uint8_t curKi);
@@ -183,6 +194,7 @@ public:
 	int WriteDeceleration(uint16_t decelerate);
 	int WritePosKpKi(uint16_t kp, uint16_t ki);
 	int WriteCurrentPositionAsZero();
+	int WriteMaximumCurrent(uint16_t amp001);
 
 	static int WriteAll(RMDx6v3 & dev, uint8_t data[8]);
 	static int ResetAll(RMDx6v3 & dev);
@@ -218,10 +230,13 @@ public:
 	M8010L(TcpCan & tcpCan, uint8_t id) : CanMotor(tcpCan, id), m_statusBits() {}
 	M8010L(SocketCan & socketCan, uint8_t id) : CanMotor(socketCan, id), m_statusBits() {}
 
+	const char *Name() { return "M8010L"; }
+
 	int Read(TcpCanFrame & rf);
 	int Read(can_frame & rf);
 
 	int Reset();
+	int Shutdown();
 	int ReadStatus(uint8_t id = 0);
 	int ReadPID();
 	int WritePID(uint8_t posKp, uint8_t posKi, uint8_t velKp, uint8_t velKi, uint8_t curKp, uint8_t curKi);
@@ -233,6 +248,7 @@ public:
 	int WritePosKpKi(uint16_t kp, uint16_t ki);
 	int WriteHeartBeatInterval(uint16_t ms);
 	int WriteCurrentPositionAsZero();
+	int WriteMaximumCurrent(uint16_t amp001);
 };
 
 #endif

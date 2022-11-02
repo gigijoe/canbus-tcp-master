@@ -47,14 +47,14 @@ void read_line_print_usage() {
 
 void tty_raw_mode(void) {
 	struct termios tty_attr;
-     
+	 
 	tcgetattr(0, &tty_attr);
 
 	/* Set raw mode. */
 	tty_attr.c_lflag &= (~(ICANON|ECHO));
 	tty_attr.c_cc[VTIME] = 0;
 	tty_attr.c_cc[VMIN] = 1;
-     
+	 
 	tcsetattr(0,TCSANOW,&tty_attr);
 }
 
@@ -140,10 +140,12 @@ char *read_line()
 				history_index = history_length-1;
 			}
 			break;
+#if 0
 		} else if(ch == 31) { // ctrl-?
 			read_line_print_usage();
 			line_buffer[0]=0;
 			break;
+#endif
 		} else if((ch == 8 || ch == 127) && line_length != 0) { // <backspace> was typed. Remove previous character read.
 			ch = 8;
 			write(1, &ch, 1); // Go back one character
@@ -159,12 +161,13 @@ char *read_line()
 			// Remove one character from buffer
 			line_length--;
 			curr_pos--;
+#if 0
 		} else if(ch == 4  && line_length != 0) { // CTRL_D:  Remove char at position
 			int i;
 			for(i = curr_pos; i < line_length - 1; i++) {
 				line_buffer[i] = line_buffer[i+1];
 				write(1, &line_buffer[i], 1);
-	 		}
+			}
 
 			line_buffer[line_length] = ' ';
 			line_length--;
@@ -180,7 +183,7 @@ char *read_line()
 			write(1, &ch, 1);
 			
 			for(i = line_length; i > curr_pos; i--)
-	  			write(1, &ch, 1);
+				write(1, &ch, 1);
 	
 		} else if(ch == 1) { // CTRL-A : Move to beginning of line
 			int i;
@@ -196,6 +199,7 @@ char *read_line()
 				write(1, &ch, 1);
 				curr_pos++;
 			}
+#endif
 		} else if (ch==27) {
 			// Escape sequence. Read two chars more
 			//
@@ -216,9 +220,9 @@ char *read_line()
 				}
 			}
 
-	  		//RIGHT ARROW
-	  		if(ch1 == 91 && ch2 == 67) {
-	  			if(curr_pos < line_length) {
+			//RIGHT ARROW
+			if(ch1 == 91 && ch2 == 67) {
+				if(curr_pos < line_length) {
 					char ch = line_buffer[curr_pos];
 					write(1, &ch, 1);
 					curr_pos++;

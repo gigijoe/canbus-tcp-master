@@ -87,7 +87,7 @@ void TcpCanThread(TcpCan & tcpCan, const char *addr, uint16_t port, uint8_t numM
 		for(int8_t i=tcpCan.NumberDevices()-1;i>=0;i--) {	
 			tcpCan.Device(i)->Reset();
 			tcpCan.Device(i)->WriteBrake(false);
-			tcpCan.Device(i)->WriteTorque(100); // 1A
+			tcpCan.Device(i)->WriteMaximumCurrent(100); // 1A
 			if(typeid(T) == typeid(RMDx6)) {
 // X6 default 
 /*
@@ -105,7 +105,6 @@ Position Kp = 50 / Ki = 50
 				tcpCan.Device(i)->WriteAcceleration(65535); // Disable trapezoidal acceleration pluse
 				tcpCan.Device(i)->WritePosKpKi(300, 0); // Kp from 60 ~ 30000
 				tcpCan.Device(i)->WriteHeartBeatInterval(0); // Heart beat interval in ms. 0 disabled.
-				//socketCan.Device(i)->PositionLimitation(0, -10000); // 0 to -100 degree
 			}
 		}
 

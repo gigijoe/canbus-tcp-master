@@ -13,6 +13,7 @@
 #include <chrono>
 #include <sstream>
 #include <algorithm>
+#include <numeric>
 
 #include <thread>
 #include <mutex>
@@ -25,6 +26,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <signal.h>
+#include <termios.h>
 
 //#include "modbus/modbus.h"
 #include "csv_parser.h"
@@ -51,22 +53,24 @@ using std::chrono::seconds;
 //using namespace cv;
 using namespace std;
 
-static bool bShutdown = false;
+static bool bExit = false;
 
 void sig_handler(int signo)
 {
 	if(signo == SIGINT) {
 		printf("SIGINT\n");
-		bShutdown = true;
+		bExit = true;
 	}
 }
 
+#define EMERGENCY_GPIO 26
+
 template <class T>
-void DeviceInitialize(CanMotor *cm)
+void CanMotorInitialize(CanMotor *cm)
 {
 	cm->Reset();
 	cm->WriteBrake(false);
-	cm->WriteTorque(100); // 1A
+	cm->WriteMaximumCurrent(100); // 1A
 	if(typeid(T) == typeid(RMDx6)) {
 // X6 default 
 /*
@@ -102,10 +106,18 @@ void SocketCanThread(SocketCan & socketCan, uint16_t port, uint32_t bitrate, uin
 		socketCan.AddDevice(new T(socketCan, i+1)); // ID range from 1 to 32
 	}
 
-	while(!bShutdown) {
+	while(!bExit) {
 		//for(uint8_t i=0;i<socketCan.NumberDevices();i++) {
 		for(int8_t i=socketCan.NumberDevices()-1;i>=0;i--) {
-			DeviceInitialize<T>(socketCan.Device(i));
+			CanMotorInitialize<T>(socketCan.Device(i));
+			if(typeid(T) == typeid(RMDx6)) {
+			} else if(typeid(T) == typeid(RMDx6v3)) {
+			} else if(typeid(T) == typeid(M8010L)) {
+				if(i < 15)
+					socketCan.Device(i)->PositionLimitation(0, -10000); // 0 to -100 degree
+				else
+					socketCan.Device(i)->PositionLimitation(0, -9500); // 0 to -95 degree
+			}
 		}
 
 #ifdef STATUS_THREAD // Status thread causes DNET400
@@ -113,8 +125,8 @@ void SocketCanThread(SocketCan & socketCan, uint16_t port, uint32_t bitrate, uin
 		std::future<void> futureObj = exitSignal.get_future();
 		
 		std::thread t([&socketCan](std::future<void> futureObj) -> void { // Capture local variable 'socketCan' by reference
-			const long long _interval = 20; // ms
-			while(!bShutdown) {
+			const long long _interval = 10; // ms
+			while(!bExit) {
 				//for(uint8_t i=0;i<socketCan.NumberDevices();i++) {
 				for(int8_t i=socketCan.NumberDevices()-1;i>=0;i--) {
 					if(socketCan.Device(i) == nullptr)
@@ -137,7 +149,7 @@ void SocketCanThread(SocketCan & socketCan, uint16_t port, uint32_t bitrate, uin
 			}
 		}, std::move(futureObj));
 #endif
-		while(!bShutdown) {
+		while(!bExit) {
 			vector<can_frame> vf;
 			int r = socketCan.Read(vf, 100); // 100ms timeout
 			if(r > 0) {
@@ -240,44 +252,6 @@ static int read_gpio(int gpio)
 *
 */
 
-#define TEST_GAP 200 // 2 degree
-
-static int test_cmd(SocketCan & socketCan, int index, int32_t pos, uint16_t speed)
-{
-	printf("Start test ... Press any key to stop !!!\n");
-	socketCan.Device(index)->ReadPosition();
-	std::this_thread::sleep_for(std::chrono::milliseconds(33));
-
-	int32_t p = socketCan.Device(index)->EncoderPosition(); // 0.01 degree
-	int32_t interval = TEST_GAP; // 1 Degree interval 
-
-	p = (p / interval) * interval; // Make sure position aligment to interval
-	while(!bShutdown) {
-		if(interval > 0) {
-			if((p + interval) <= pos) {
-				p += interval;
-				socketCan.Device(index)->WritePosition(p, speed);
-			} else 
-				interval = (0 - TEST_GAP);
-		} else if(interval < 0) {
-			if((p + interval) >= 0) {
-				p += interval;
-				socketCan.Device(index)->WritePosition(p, speed);
-			} else
-				interval = TEST_GAP;
-		}
-
-		if(select_stdin(100000) > 0) { // 100ms timeout
-			break;
-		}
-
-		//socketCan.Device(index)->ReadStatus();
-	}
-	printf("Done ...\n");
-
-	return 0;
-}
-
 #include "atox.h"
 
 typedef struct {
@@ -373,15 +347,42 @@ static bool parse_flower_csv(const char *filename) {
 	return true;
 }
 
-void play_file_cmd(const char *filename, int32_t replayCount)
+static bool emergency_wait(std::chrono::microseconds t) 
+{
+	std::mutex mtx;
+	std::unique_lock<std::mutex> lock(mtx);
+
+	auto end = steady_clock::now() + t;
+
+	auto res = s_emergency.wait_until(lock, end);
+	if(res != std::cv_status::timeout) {
+		return true; // Emergency Stop !!!
+	}
+
+	return false;
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern void tty_raw_mode(void);
+extern char *read_line();
+
+#ifdef __cplusplus
+}
+#endif
+
+static void play_file_cmd(const char *filename, int32_t replayCount)
 {
 	if(parse_flower_csv(filename) == false)
 		return;
-	
-	if(read_gpio(26) == 1) { // Emergency Stopped !!!
+#if 0
+	if(read_gpio(EMERGENCY_GPIO) == 1) { // Emergency Stopped !!!
 		printf("Emergency Stopped !!!\n");
 		return;
 	}
+#endif
 #if 0
 	for(uint8_t i=0;i<NUM_PETAL;i++) {
 		printf("Petal[%d] : \n", i);
@@ -400,105 +401,107 @@ void play_file_cmd(const char *filename, int32_t replayCount)
 	uint32_t d_pitch[NUM_PETAL] = {0}; // delta movement between two positions
 	uint32_t d_roll[NUM_PETAL] = {0}; // delta movement between two positions
 	bool bFinished = false;
+	bool bPause = false;
 	const long long _interval = 50; // 50 ms
-	while(!bShutdown && !bFinished) {
+
+	// Set terminal in raw mode
+	struct termios orig_attr;
+	tcgetattr(0, &orig_attr);
+	tty_raw_mode();
+
+	while(!bExit && !bFinished) {
 		steady_clock::time_point t1(steady_clock::now()); // T1
 
-		static int32_t pos = 0;
-		static uint16_t speed = 0;
-		//for(uint8_t i=0;i<NUM_PETAL;i++) {
-		for(int8_t i=NUM_PETAL-1;i>=0;i--) {
+		if(!bPause) {
+			//for(uint8_t i=0;i<NUM_PETAL;i++) {
+			for(int8_t i=NUM_PETAL-1;i>=0;i--) {
 /*
 	0 : M8010L x 25
 	1 : RMD X6V3 x 25
 */
-			float p0 = ppls[i]->pitch;
-			s_socketCan[0].Device(i)->WritePosition((int32_t)(p0 * 100), d_pitch[i] & 0xffff); // 0.01 degree
-			//if(i == 0)
-			//	printf("s_socketCan[0].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p0, d_pitch[i]);
-			
-			float p1 = ppls[i]->roll;
-			s_socketCan[1].Device(i)->WritePosition((int32_t)(p1 * 100), d_roll[i] & 0xffff); // 0.01 degree
-			//if(i == 0)
-			//	printf("s_socketCan[1].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p1, d_roll[i]);
+				float p0 = ppls[i]->pitch;
+				s_socketCan[0].Device(i)->WritePosition((int32_t)(p0 * 100), d_pitch[i] & 0xffff); // 0.01 degree
+				//if(i == 0)
+				//	printf("s_socketCan[0].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p0, d_pitch[i]);
+				
+				float p1 = ppls[i]->roll;
+				s_socketCan[1].Device(i)->WritePosition((int32_t)(p1 * 100), d_roll[i] & 0xffff); // 0.01 degree
+				//if(i == 0)
+				//	printf("s_socketCan[1].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p1, d_roll[i]);
 
-			++ppls[i];
+				++ppls[i];
 
-			if(ppls[i] == s_petals[i].end()) {
-				d_pitch[i] = 0;
-				d_roll[i] = 0;
-				continue;
+				if(ppls[i] == s_petals[i].end()) {
+					d_pitch[i] = 0;
+					d_roll[i] = 0;
+					continue;
+				}
+
+				d_pitch[i] = abs((int32_t)((ppls[i]->pitch - p0) * (1000 / _interval))); // dps
+				d_roll[i] = abs((int32_t)((ppls[i]->roll - p1)  * (1000 / _interval))); // dps
+
+				//std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 
-			d_pitch[i] = abs((int32_t)((ppls[i]->pitch - p0) * (1000 / _interval))); // dps
-			d_roll[i] = abs((int32_t)((ppls[i]->roll - p1)  * (1000 / _interval))); // dps
+			for(uint8_t i=0;i<NUM_EXTRA_PETAL;i++) {
+				uint8_t ei = i + NUM_PETAL;
+				if(ppls[ei] == s_petals[ei].end())
+					continue;
 
-			//std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
+				servolcm::pwm_t r;
+				r.channel = i;
+				r.angle = ppls[ei]->pitch;
 
-		for(uint8_t i=0;i<NUM_EXTRA_PETAL;i++) {
-			uint8_t ei = i + NUM_PETAL;
-			if(ppls[ei] == s_petals[ei].end())
-				continue;
-
-			servolcm::pwm_t r;
-			r.channel = i;
-			r.angle = ppls[ei]->pitch;
-
-			s_lcm.publish("PWM", &r);
-			++ppls[ei];
-		}
+				s_lcm.publish("PWM", &r);
+				++ppls[ei];
+			}
 #if 1
-		auto dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
-		printf("dt_us = %ld\n", dt_us);
+			auto dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
+			printf("dt_us = %ld\n", dt_us);
 #endif
-		for(uint8_t i=0;i<NUM_PETAL;i++) {
-			if(ppls[i] == s_petals[i].end()) {
-				if(replayCount > 0) {
-					for(uint8_t j=0;j<NUM_PETAL;j++) {
-						ppls[j] = s_petals[j].begin();
+			for(uint8_t i=0;i<NUM_PETAL;i++) {
+				if(ppls[i] == s_petals[i].end()) {
+					if(replayCount > 0) {
+						for(uint8_t j=0;j<NUM_PETAL;j++) {
+							ppls[j] = s_petals[j].begin();
+						}
+						std::this_thread::sleep_for(std::chrono::milliseconds(100));
+						replayCount--;
+						printf("Replay %d ...\n", replayCount);
+					} else {
+						bFinished = true;
 					}
-					std::this_thread::sleep_for(std::chrono::milliseconds(100));
-					replayCount--;
-					printf("Replay %d ...\n", replayCount);
-				} else {
-					bFinished = true;
+					break; // If any petal is end then leave ...
 				}
-				break; // If any petal is end then leave ...
 			}
 		}
 
 		if(select_stdin(0) > 0) { // No timeout
 			char ch;
 			::read(0, &ch, 1); // Read one character in raw mode.
-			if(ch == 'q' || ch == 'Q')
+			if(ch == 'q' || ch == 'Q') {
+				printf("Stopped !!!\n");
 				break;
-		}
-
-		std::mutex mtx;
-		std::unique_lock<std::mutex> lock(mtx);
-
-		dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
-		//printf("dt_us = %ld\n", dt_us);
-		
-		auto end = steady_clock::now() + std::chrono::microseconds(_interval * 1000 - dt_us);
-		auto res = s_emergency.wait_until(lock, end);
-		if(res != std::cv_status::timeout) {
-			break; // Emergency Stop !!!
-		}
-/*
-		if(dt_us < _interval * 1000) {
-			//std::this_thread::sleep_for(std::chrono::microseconds(_interval * 1000 - dt_us));
-			if(select_stdin(_interval * 1000 - dt_us) > 0) { // 100ms timeout
-				char ch;
-				::read(0, &ch, 1); // Read one character in raw mode.
-				if(ch == 'q' || ch == 'Q')
-					break;
+			}
+			else if(ch == 'p' || ch == 'P') {
+				bPause = !bPause;
+				if(bPause)
+					printf("Paused !!!\nPress any key to continue ...\n");
+			} else {
+				if(bPause)
+					bPause = false;
 			}
 		}
-*/
+
+		auto dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();		
+		if(emergency_wait(std::chrono::microseconds(_interval * 1000 - dt_us)))
+			break; // Emergency Stop !!!
 	}
-	printf("Finished !!!\n");
+
+	tcsetattr(0, TCSANOW, &orig_attr);
+
+	if(bFinished)
+		printf("Finished !!!\n");
 }
 
 static void can_cmd(vector<string> & tokens)
@@ -522,33 +525,52 @@ static void can_cmd(vector<string> & tokens)
 	if(tokens.size() >= 4) {
 		if(tokens[3] == "status") {
 			s_socketCan[busIndex].Device(motorIndex)->ReadStatus();
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			printf("CAN%d %s[%d] status\n",
+				busIndex, 
+				s_socketCan[busIndex].Device(motorIndex)->Name(), 
+				motorIndex);
+			s_socketCan[busIndex].Device(motorIndex)->PrintStatus();
 		} else if(tokens[3] == "reset") {
 			s_socketCan[busIndex].Device(motorIndex)->Reset();
+			printf("CAN%d %s[%d] reset\n",
+				busIndex, 
+				s_socketCan[busIndex].Device(motorIndex)->Name(), 
+				motorIndex);
 		} else if(tokens[3] == "pos") {
 			if(tokens.size() <= 4) {
 				s_socketCan[busIndex].Device(motorIndex)->ReadPosition();
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				printf("CAN%d %s[%d] position = %f (0.01 degree)\n", 
+					busIndex, 
+					s_socketCan[busIndex].Device(motorIndex)->Name(), 
+					motorIndex, 
+					s_socketCan[busIndex].Device(motorIndex)->MultiTurnAngle());
 			} else {
 				int32_t pos = stoi(tokens[4]);
 				if(tokens.size() >= 6) {
 					uint16_t speed = stoi(tokens[5]);
 					s_socketCan[busIndex].Device(motorIndex)->WritePosition(pos, speed);
 				} else
-					s_socketCan[busIndex].Device(motorIndex)->WritePosition(pos, 360);
+					s_socketCan[busIndex].Device(motorIndex)->WritePosition(pos, 200);
+				printf("CAN%d %s[%d] go to position %d (0.01 degree)\n", 
+					busIndex, 
+					s_socketCan[busIndex].Device(motorIndex)->Name(), 
+					motorIndex, 
+					pos);
 			}
-		} else if(tokens[3] == "pid") {
-			s_socketCan[busIndex].Device(motorIndex)->ReadPID();
 		} else if(tokens[3] == "origin") {
+			printf("CAN%d %s[%d] go to zero position whit speed 10 dps\n",
+				busIndex, 
+				s_socketCan[busIndex].Device(motorIndex)->Name(), 
+				motorIndex);
 			s_socketCan[busIndex].Device(motorIndex)->WritePosition(0, 10); // Go to zero position whit speed 10 dps
 		} else if(tokens[3] == "zero") {
+			printf("CAN%d %s[%d] set current position as zero position\n",
+				busIndex, 
+				s_socketCan[busIndex].Device(motorIndex)->Name(), 
+				motorIndex);				
 			s_socketCan[busIndex].Device(motorIndex)->WriteCurrentPositionAsZero();
-		} else if(tokens[3] == "test") {
-			if(tokens.size() >= 5) {
-				int32_t pos = stoi(tokens[4]);
-				uint16_t speed = 360; // dps
-				if(tokens.size() >= 6)
-					speed = stoi(tokens[5]);
-				test_cmd(s_socketCan[busIndex], motorIndex, pos, speed);
-			}
 		}
 	}
 }
@@ -560,6 +582,8 @@ static void pwm_cmd(vector<string> & tokens)
 	if(angle > 180)
 		angle = 180;
 
+	printf("PWM%u set angle %u degree\n", channel, angle);
+
 	servolcm::pwm_t r;
 	r.channel = channel;
 	r.angle = angle;
@@ -567,7 +591,7 @@ static void pwm_cmd(vector<string> & tokens)
 	s_lcm.publish("PWM", &r);
 }
 
-void status_cmd()
+static void status_cmd()
 {
 #ifndef STATUS_THREAD
 	for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
@@ -578,6 +602,7 @@ void status_cmd()
 	}
 #endif
 	printf("Read status now, please wait ...\n");
+
 	std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
 	for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
@@ -596,31 +621,167 @@ void status_cmd()
 		}
 		printf("\033[0m"); /* Default color */
 	}
-
+#if 0
 	for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
 		printf("=========================================================================================\n");
 		printf("CAN %2.2u - Load %d%%\n", i, s_socketCan[i].BusLoad());
 		printf("=========================================================================================\n");
 	}
+#endif
 }
 
-void reset_cmd()
+static void reset_cmd()
 {
 	// 展開外圈舉昇馬達 M8010L 至 90度角
 	// 水平外圈自旋馬達 X6V3 至 360度角
 	// 展開內圈圈舉昇馬達 M8010L 至 60度角
 	// 水平內圈自旋馬達 X6V3 至 360度角 
+
+	printf("Reset socket CAN & reinitial all devices ...\n");
+
+	for(int8_t j=s_socketCan[0].NumberDevices()-1;j>=0;j--) {
+		CanMotorInitialize<M8010L>(s_socketCan[0].Device(j));
+	}
+
+	for(int8_t j=s_socketCan[1].NumberDevices()-1;j>=0;j--) {
+		CanMotorInitialize<RMDx6v3>(s_socketCan[1].Device(j));
+	}
 }
 
-#ifdef __cplusplus
-extern "C" {
+static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_t dev_begin, uint8_t dev_end)
+{
+	angle = (angle / 100) * 100;
+
+	// Set terminal in raw mode
+	struct termios orig_attr;
+	tcgetattr(0, &orig_attr);
+	tty_raw_mode();
+
+	int loopCount = 0;
+	bool bAllDone = false;
+	while(!bAllDone) {
+		bAllDone = true;
+		for(int dev_id=dev_begin;dev_id>=dev_end;dev_id--) {
+			double a = round(s_socketCan[can_id].Device(dev_id)->MultiTurnAngle());
+			a *= 100;
+			if(abs(angle - a) < 500) {
+				printf("CAN%u %s[%d] go to %lf degree\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, angle);
+				s_socketCan[can_id].Device(dev_id)->WritePosition(angle, max_speed);
+				continue;
+			}
+#if 1
+			printf("Warning !!! Warning !!! Warning !!! \n");
+			printf("MOTORS 2,5,8,11,14 NOT INSTALLED !!!\n");
+
+			if(dev_id == 2 || dev_id == 5 || dev_id == 8 || dev_id == 11 || dev_id == 14)
+				continue;
 #endif
+			bAllDone = false;
 
-extern char *read_line();
+			double step = angle > a ? 500 : -500; // +/- 1 degree
+//printf("a = %lf\n", a);
+			printf("CAN%u %s[%d] go to %lf degree with step %lf, max speed %u\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, a + step, step, max_speed);
+//printf("a + step = %lf + %lf = %lf\n", a, step, a + step);
+			s_socketCan[can_id].Device(dev_id)->WritePosition(a + step, max_speed);
+		}
 
-#ifdef __cplusplus
+		if(loopCount++ > 180) {
+			printf("Timeout !!!\n");
+			bAllDone = false;
+			break;
+		}
+
+		if(select_stdin(0) > 0) { // No timeout
+			char ch;
+			::read(0, &ch, 1); // Read one character in raw mode.
+			if(ch == 'q' || ch == 'Q'){
+				printf("Stopped !!!\n");
+				bAllDone = false;
+				break;
+			}
+		}
+
+		//std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		if(emergency_wait(std::chrono::milliseconds(100))) { // 100ms
+			bAllDone = false;
+			break;
+		}
+
+	}
+
+	tcsetattr(0, TCSANOW, &orig_attr);
+
+	return bAllDone;
 }
-#endif
+
+#define NUM_OUTTER_PETAL 15
+#define NUM_INNER_PETAL 10
+
+static inline bool outter_motors_goto(uint8_t can_id, double angle, uint16_t max_speed)
+{
+	return motors_goto(can_id, angle, max_speed, NUM_OUTTER_PETAL-1, 0); // 14 ~ 0
+}
+
+static inline bool inner_motors_goto(uint8_t can_id, double angle, uint16_t max_speed)
+{
+	return motors_goto(can_id, angle, max_speed, NUM_PETAL-1, NUM_OUTTER_PETAL); // 24 ~ 15
+}
+
+static void home_cmd()
+{
+	printf("Bring all motors to home position ...\n");
+
+	// CAN0 M8010L[0~14]
+
+	printf("Raising up all outter petals\n");
+	if(!outter_motors_goto(0, -9000, 200))
+		return;
+
+	// CAN1 RMDx6v3[0~14]
+
+	printf("Rotate all outter petals\n");
+	if(!outter_motors_goto(1, 2400, 200))
+		return;
+
+	// CAN0 M8010L[15~24]
+
+	printf("Raising up all inner petals\n");
+	if(!inner_motors_goto(0, -3000, 200))
+		return;
+
+	// CAN1 RMDx6v3[15~24]
+
+	printf("Rotate all inner petals\n");
+	if(!inner_motors_goto(1, 2400, 200))
+		return;
+
+	printf("Low down all inner petals\n");
+	if(!inner_motors_goto(0, 0, 200))
+		return;
+
+	printf("Low down all outter petals\n");
+	if(!outter_motors_goto(0, 0, 200))
+		return;
+
+	printf("Done ...\n");
+}
+
+static void shutdown_cmd()
+{
+	printf("Shutdown all motors ...\n");
+
+	for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
+		for(int8_t j=s_socketCan[0].NumberDevices()-1;j>=0;j--) {
+			s_socketCan[i].Device(j)->Shutdown();
+		}
+	}
+
+	printf("Done ...\n");
+}
+
+/*
+*
+*/
 
 const char promopt[] = "CAN\\>";
 // ID from 1 to N ...
@@ -636,11 +797,14 @@ Management Commands:\n\
   origin\n\
   zero\n\
   status\n\
+  reset\n\
+  home\n\
+  shutdown\n\
   exit\n\
 \n\
 ";
 
-int can_main(int argc, char**argv)
+static int can_main(int argc, char**argv)
 {
 	std::thread socketCan1Thread(SocketCanThread<M8010L>, std::ref(s_socketCan[0]), 0, 1000000, 
 		NUM_DEV_PER_SOCKETCAN); // 25 M8010L motors
@@ -648,7 +812,7 @@ int can_main(int argc, char**argv)
 	std::thread socketCan2Thread(SocketCanThread<RMDx6v3>, std::ref(s_socketCan[1]), 1, 500000, 
 		NUM_DEV_PER_SOCKETCAN); // 25 RMDx6 motors
 
-	while(!bShutdown) {
+	while(!bExit) {
 		printf(promopt);
 		fflush(stdout);
 		char *input = read_line();
@@ -668,10 +832,18 @@ int can_main(int argc, char**argv)
 
 			if(tokens.size() > 0) {
 				if(tokens[0] == "exit") {
-					bShutdown = true;
+					bExit = true;
 				} else if(tokens[0] == "help") {
 					printf(help);					
 				} else if(tokens[0] == "play") {
+					// If there's CAN bus error then reinitialize all devices
+					for(int i=0;i<NUM_SOCKETCAN;i++) { 
+						if(s_socketCan[i].Flag() & CAN_ERR_FLAG) {
+							reset_cmd();
+							break;
+						}
+					}
+
 					if(tokens.size() == 2)
 						play_file_cmd(tokens[1].c_str(), 0);
 					else if(tokens.size() >= 3)
@@ -679,6 +851,7 @@ int can_main(int argc, char**argv)
 					else
 						printf(help);
 				} else if(tokens[0] == "origin") {
+					printf("Go to zero position whit speed 10 dps\n");
 					for(uint8_t i=0;i<NUM_SOCKETCAN;i++) {
 						for(uint8_t j=0;j<s_socketCan[i].NumberDevices();j++) {
 							s_socketCan[i].Device(j)->WritePosition(0, 10); // Go to zero position whit speed 10 dps
@@ -698,6 +871,10 @@ int can_main(int argc, char**argv)
 					status_cmd();
 				} else if(tokens[0] == "reset") {
 					reset_cmd();
+				} else if(tokens[0] == "home") {
+					home_cmd();
+				} else if(tokens[0] == "shutdown") {
+					shutdown_cmd();
 				}
 
 				tokens.clear();
@@ -738,9 +915,9 @@ class Handler {
 	}
 };
 
-void status_publish()
+static void status_publish()
 {
-	while (!bShutdown) {
+	while (!bExit) {
 		for(int i=0;i<NUM_SOCKETCAN;i++) {
 			for(int j=0;j<s_socketCan[i].NumberDevices();j++) {
 				CanMotor *cm = s_socketCan[i].Device(j);
@@ -764,7 +941,12 @@ void status_publish()
 	}
 }
 
-int lcm_main(int argc, char**argv)
+/*
+* sudo route add -net 239.255.76.67 netmask 255.255.255.255 dev eno1
+* route -n
+*/
+
+static int lcm_main(int argc, char**argv)
 {
 	if(!s_lcm.good())
 		return 1;
@@ -774,7 +956,7 @@ int lcm_main(int argc, char**argv)
 	Handler handlerObject;
 	s_lcm.subscribe("POSITION", &Handler::handlePosition, &handlerObject);
 
-	while(!bShutdown) {
+	while(!bExit) {
 		s_lcm.handleTimeout(100);
 	}
 
@@ -791,40 +973,53 @@ echo rising >/sys/class/gpio/gpio26/edge
 
 */
 
-int gpio_main(int gpio)
+/*
+# config.txt
+
+# Make 17 to 21 inputs
+      gpio=17-21=ip
+
+# Change the pull on (input) pins 18 and 20
+      gpio=18,20=pu
+*/
+
+static int emergency_main(int gpio)
 {
-    char buf[64];
+	printf("Emergency GPIO is %d\n", EMERGENCY_GPIO);
+
+	char buf[64];
 	snprintf(buf, 64, "/sys/class/gpio/gpio%d/value", gpio);
 	int fd = open(buf, O_RDONLY);
 	if(fd < 0)
 		return -1;
 
-    struct pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = POLLPRI;
+	struct pollfd pfd;
+	pfd.fd = fd;
+	pfd.events = POLLPRI;
 
-    lseek(fd, 0, SEEK_SET);
+	lseek(fd, 0, SEEK_SET);
 
-    while(!bShutdown) {
-        int retval = poll(&pfd, 1, -1);
-        if (pfd.revents & POLLPRI) {
+	while(!bExit) {
+		int retval = poll(&pfd, 1, -1);
+		if (pfd.revents & POLLPRI) {
 
-            lseek(fd, 0, SEEK_SET);
+			lseek(fd, 0, SEEK_SET);
 
-            char valstr[3];
-            retval = read(fd, valstr, 3);
+			char valstr[3];
+			retval = read(fd, valstr, 3);
 
-            if(retval > 0) {
-            	//cout << valstr << endl;
-            	if(atoi(valstr) == 1) {
-            		printf("Emergency Stopped !!!\n");
-            		s_emergency.notify_all();
-            	}
-            }
-        }
-    }
+			if(retval > 0) {
+				//cout << valstr << endl;
+				if(atoi(valstr) == 1) {
+					printf("Emergency Stopped !!!\n");
+					shutdown_cmd();
+					s_emergency.notify_all();
+				}
+			}
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 int main(int argc, char**argv)
@@ -840,8 +1035,8 @@ int main(int argc, char**argv)
 		printf("nice value is now %d\n", v);
 
 	std::thread lcm_thread(lcm_main, argc, argv);
-	std::thread gpio_thread(gpio_main, 26);
-    
+	std::thread gpio_thread(emergency_main, EMERGENCY_GPIO);
+	
 	can_main(argc, argv);
 
 	gpio_thread.detach();
