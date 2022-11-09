@@ -40,6 +40,10 @@
 #include "servolcm/status_t.hpp"
 #include "servolcm/pwm_t.hpp"
 
+#include "protolcm/status_t.hpp"
+#include "protolcm/command_t.hpp"
+#include "protolcm/region_t.hpp"
+
 std::condition_variable s_emergency;
 
 static lcm::LCM s_lcm("udpm://239.255.76.67:7667?ttl=1");
@@ -266,7 +270,7 @@ static vector<Petal> s_petals[NUM_PETAL + NUM_EXTRA_PETAL];
 static bool parse_flower_csv(const char *filename) {
 	FILE *fp = fopen(filename, "r");
 	if(!fp) {
-		printf("parse %s fail : %s\n", filename, strerror(errno));
+		printf("Fail open %s => %s\n", filename, strerror(errno));
 		return false;
 	}
 
@@ -375,6 +379,7 @@ extern char *read_line();
 
 static void play_file_cmd(const char *filename, int32_t replayCount)
 {
+	printf("\nPlay %s\n", filename);
 	if(parse_flower_csv(filename) == false)
 		return;
 #if 0
@@ -455,7 +460,10 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 				s_lcm.publish("PWM", &r);
 				++ppls[ei];
 			}
-#if 1
+
+			printf("\rpercentage %ld%%", distance(s_petals[0].begin(), ppls[0]) * 100 / s_petals[0].size());
+			fflush(stdout);
+#if 0
 			auto dt_us = duration_cast<microseconds>(steady_clock::now() - t1).count();
 			printf("dt_us = %ld\n", dt_us);
 #endif
@@ -467,7 +475,7 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 						}
 						std::this_thread::sleep_for(std::chrono::milliseconds(100));
 						replayCount--;
-						printf("Replay %d ...\n", replayCount);
+						printf("\nReplay %d ...\n", replayCount);
 					} else {
 						bFinished = true;
 					}
@@ -480,13 +488,13 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 			char ch;
 			::read(0, &ch, 1); // Read one character in raw mode.
 			if(ch == 'q' || ch == 'Q') {
-				printf("Stopped !!!\n");
+				printf("\nStopped !!!\n");
 				break;
 			}
 			else if(ch == 'p' || ch == 'P') {
 				bPause = !bPause;
 				if(bPause)
-					printf("Paused !!!\nPress any key to continue ...\n");
+					printf("\nPaused !!!\nPress any key to continue ...\n");
 			} else {
 				if(bPause)
 					bPause = false;
@@ -501,7 +509,7 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 	tcsetattr(0, TCSANOW, &orig_attr);
 
 	if(bFinished)
-		printf("Finished !!!\n");
+		printf("\nFinished !!!\n");
 }
 
 static void can_cmd(vector<string> & tokens)
@@ -755,9 +763,13 @@ static void home_cmd()
 	if(!inner_motors_goto(1, 2400, 200))
 		return;
 
+	// CAN0 M8010L[15~24]
+
 	printf("Low down all inner petals\n");
 	if(!inner_motors_goto(0, 0, 200))
 		return;
+
+	// CAN0 M8010L[0~14]
 
 	printf("Low down all outter petals\n");
 	if(!outter_motors_goto(0, 0, 200))
@@ -778,6 +790,153 @@ static void shutdown_cmd()
 
 	printf("Done ...\n");
 }
+
+/*
+*
+*/
+
+class MasterServer {
+private:
+	uint8_t m_scenario;
+	uint8_t m_mode;
+	typedef enum { e_shutdown, e_reset, e_idle, e_home, e_playing, e_error } State;
+	std::atomic<State> m_state;
+
+	std::thread m_actionThread;
+
+public:
+	MasterServer() : m_scenario(0), m_state(e_shutdown) {}
+
+	void handleCommand(const lcm::ReceiveBuffer *rbuf, const std::string &chan,
+					   const protolcm::command_t *msg)
+	{
+		printf("  action   = %s\n", msg->action.c_str());
+		printf("  scenario   = %d\n", msg->scenario);
+		printf("  script   = %d\n", msg->script);
+		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
+		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
+
+		if(strcmp(msg->action.c_str(), "shutdown") == 0) {
+			if(m_state == e_shutdown)
+				return;
+
+			std::thread t = ShutdownThread();
+			t.detach();
+		} else if(strcmp(msg->action.c_str(), "reset") == 0) {
+			if(m_state >= e_reset)
+				return;
+
+			std::thread t = ResetThread();
+			t.detach();
+		} else if(strcmp(msg->action.c_str(), "stop") == 0) {
+		} else if(strcmp(msg->action.c_str(), "home") == 0) {
+			if(m_state < e_reset || m_state >= e_home)
+				return;
+
+			std::thread t = HomeThread();
+			t.detach();
+		} else if(strcmp(msg->action.c_str(), "play") == 0) {
+			if(m_state != e_idle)
+				return;
+
+			m_scenario = msg->scenario;
+
+			char fn[128];
+			//snprintf(fn, 128, "/usr/local/share/flower_s%d%02d.csv", msg->scenario, msg->script);
+			snprintf(fn, 128, "../flower.csv");
+
+			if(m_actionThread.joinable())
+				m_actionThread.join();
+
+			m_actionThread = PlayThread(fn);
+		}
+	}
+
+	void handleRegion(const lcm::ReceiveBuffer *rbuf, const std::string &chan,
+					   const protolcm::region_t *msg)
+	{
+		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
+		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
+	}
+
+	std::thread StatusThread() {
+		return std::thread([this] {
+			while(!bExit) {
+				protolcm::status_t s;
+				s.scenario = this->m_scenario;
+				
+				switch(this->m_mode) {
+					case 0: s.mode = "auto";
+						break;
+					case 1: s.mode = "manual";
+						break;
+				}
+
+				switch(this->m_state) {
+					case e_shutdown: s.state = "shutdown";
+						break;
+					case e_reset: s.state = "reset";
+						break;
+					case e_idle: s.state = "idle";
+						break;
+					case e_home: s.state = "home";
+						break;
+					case e_playing: s.state = "playing";
+						break;
+					case e_error: s.state = "error";
+						break;
+				}
+
+				if(this->m_state == e_error) {
+					s.errstr = "error";
+				} else
+					s.errstr = "none";
+
+				struct timeval tp;
+				gettimeofday(&tp, NULL);
+				s.timestamp = tp.tv_sec * 1000 + tp.tv_usec / 1000;
+
+				s_lcm.publish("SERVER_STATUS", &s);
+				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			}
+		});
+	}
+
+	std::thread PlayThread(const char *filename) {
+		m_state = e_playing;
+		return std::thread([this] (const char *filename) {
+			play_file_cmd(filename, 0);
+			if(m_state == e_playing)
+				m_state = e_idle;
+		}, filename);
+	}
+
+	std::thread ShutdownThread() {
+		m_state = e_shutdown;
+		return std::thread([this] () {
+			shutdown_cmd();
+		});
+	}
+
+	std::thread ResetThread() {
+		m_state = e_reset;
+		return std::thread([this] () {
+			reset_cmd();
+			m_state = e_idle;
+		});
+	}
+
+	std::thread HomeThread() {
+		m_state = e_home;
+		return std::thread([this] () {
+			home_cmd();
+			m_state = e_idle;
+		});
+	}
+
+};
+
+static MasterServer s_server;
 
 /*
 *
@@ -890,6 +1049,7 @@ static int can_main(int argc, char**argv)
 	return 0;
 }
 
+#if 0
 class Handler {
   public:
 	~Handler() {}
@@ -914,8 +1074,9 @@ class Handler {
 		cm->WritePosition(msg->position * 100, msg->speed); // 0.01 degree, dps
 	}
 };
+#endif
 
-static void status_publish()
+static void servo_status_publish()
 {
 	while (!bExit) {
 		for(int i=0;i<NUM_SOCKETCAN;i++) {
@@ -933,7 +1094,7 @@ static void status_publish()
 				r.current = cm->Current();
 				r.temperature = cm->Temperature();
 
-				s_lcm.publish("STATUS", &r);
+				s_lcm.publish("SERVO_STATUS", &r);
 				std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			}
 		}
@@ -942,6 +1103,7 @@ static void status_publish()
 }
 
 /*
+* sudo ifconfig eno1 multicast
 * sudo route add -net 239.255.76.67 netmask 255.255.255.255 dev eno1
 * route -n
 */
@@ -951,16 +1113,22 @@ static int lcm_main(int argc, char**argv)
 	if(!s_lcm.good())
 		return 1;
 
-	std::thread status_thread(status_publish);
-
+	std::thread servo_status_thread(servo_status_publish);
+#if 0
 	Handler handlerObject;
 	s_lcm.subscribe("POSITION", &Handler::handlePosition, &handlerObject);
+#endif
+	
+	s_lcm.subscribe("SERVER_COMMAND", &MasterServer::handleCommand, &s_server);
+
+	std::thread server_status_thread = s_server.StatusThread();
 
 	while(!bExit) {
 		s_lcm.handleTimeout(100);
 	}
 
-	status_thread.join();
+	server_status_thread.join();
+	servo_status_thread.join();
 
 	return 0;
 }

@@ -109,7 +109,7 @@ if __name__ == "__main__":
 	ui = UI()
 
 	lc = lcm.LCM()
-	s_status = lc.subscribe("STATUS", ui.status_handler)
+	s_status = lc.subscribe("SERVO_STATUS", ui.status_handler)
 	
 	lcm_thread = Thread(target=lcm_task)
 	lcm_thread.daemon = True

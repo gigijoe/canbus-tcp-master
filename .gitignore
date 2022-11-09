@@ -2,4 +2,5 @@
 *.so
 build/
 servolcm/
+protolcm/
 __pycache__/

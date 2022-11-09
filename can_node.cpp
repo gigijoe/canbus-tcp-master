@@ -1364,7 +1364,7 @@ int M8010L::WriteCurrentPositionAsZero()
 
 	DelayMs(1000);
 
-	data[4] = 0x70; 
+	data[4] = 0x66; 
 
 	r = _Write(0x600 + m_id, // SDO : 0x600 + ID(1~127)
 		0x08, data); // Data length is 8 bytes

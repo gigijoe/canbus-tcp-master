@@ -1,0 +1,24 @@
+package protolcm;
+
+struct status_t 
+{
+	byte scenario;
+	string mode;
+	string state;
+	string errstr;
+	int64_t timestamp;
+}
+
+struct command_t
+{
+	string action;
+	byte scenario;
+	byte script;
+	int64_t timestamp;
+}
+
+struct region_t
+{
+	byte human_counts[5];
+	int64_t timestamp;
+}
