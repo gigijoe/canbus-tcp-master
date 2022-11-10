@@ -56,8 +56,11 @@ struct status_t
 {
 	byte scenario;
 	string mode;
-	string status;
-	string errstr;
+	string state;
+	int32_t num_warn;
+	string warn_str[num_warn];
+	int32_t num_err;
+	string err_str[num_err];
 	int64_t timestamp;
 }
 

@@ -57,6 +57,8 @@ protected:
 	canid_t m_flag;
 
 public:
+	string m_busErrStr;
+
 	SocketCan() : CanBus(), m_busName(nullptr), m_bitrate(0), m_socketFd(-1), m_flag(0) {}
 	~SocketCan() {
 		if(m_socketFd != -1)

@@ -53,6 +53,20 @@ class UI(QWidget):
 		self.labState.resize(144, 32)
 		self.labState.move(8, 440)
 
+		self.labWarn = QLabel(self)
+		self.labWarn.setWordWrap(True)
+		self.labWarn.setStyleSheet("border: 1px solid black;")
+		self.labWarn.resize(288, 96)
+		self.labWarn.move(8, 112)
+		self.labWarn.setText('No warning ...')
+
+		self.labErr = QLabel(self)
+		self.labErr.setWordWrap(True)
+		self.labErr.setStyleSheet("border: 1px solid black;")
+		self.labErr.resize(288, 96)
+		self.labErr.move(328, 112)
+		self.labErr.setText('No error ...')
+
 		self.show()
 
 		self.timer = QTimer(self)
@@ -119,6 +133,15 @@ class UI(QWidget):
 	def status_handler(self, channel, data):
 		msg = status_t.decode(data)
 		self.labState.setText(msg.state)
+
+		str = ''
+		if msg.num_err > 0:
+			for i in range(int(msg.num_err)):
+				str += msg.err_str[i]
+				str += '\n'
+			self.labErr.setText(str)
+		else:
+			self.labErr.setText('No error ...')
 
 		self.start_time = time.time()
 

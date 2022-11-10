@@ -57,7 +57,13 @@ int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 
 	int s = socket(PF_CAN, SOCK_RAW, CAN_RAW);//创建套接字 
 	sprintf(ifr.ifr_name, "can%u", port);
-	ioctl(s, SIOCGIFINDEX, &ifr); //指定 can[port] 设备 
+	int r = ioctl(s, SIOCGIFINDEX, &ifr); //指定 can[port] 设备 
+	if(r < 0) {
+		m_busErrStr = ifr.ifr_name;
+		m_busErrStr.append(" : ");
+		m_busErrStr.append(strerror(errno));
+printf("%s\n", m_busErrStr.c_str());
+	}
 
 	can_err_mask_t optval = (CAN_ERR_TX_TIMEOUT | 
 		CAN_ERR_LOSTARB |
@@ -95,7 +101,7 @@ int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 #endif
 	m_socketFd = s;
 
-	return 0;
+	return r;
 }
 
 int SocketCan::Write(can_frame & f)

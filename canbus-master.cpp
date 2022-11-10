@@ -67,7 +67,7 @@ void sig_handler(int signo)
 	}
 }
 
-#define EMERGENCY_GPIO 26
+#define EMERGENCY_GPIO 4
 
 template <class T>
 void CanMotorInitialize(CanMotor *cm)
@@ -366,6 +366,16 @@ static bool emergency_wait(std::chrono::microseconds t)
 	return false;
 }
 
+static bool is_emergency_stopped()
+{
+	if(read_gpio(EMERGENCY_GPIO) == 0) { // Emergency Stopped !!!
+		printf("Emergency Stopped !!!\n");
+		return true;
+	}
+
+	return false;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -382,11 +392,9 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 	printf("\nPlay %s\n", filename);
 	if(parse_flower_csv(filename) == false)
 		return;
-#if 0
-	if(read_gpio(EMERGENCY_GPIO) == 1) { // Emergency Stopped !!!
-		printf("Emergency Stopped !!!\n");
+#if 1
+	if(is_emergency_stopped())
 		return;
-	}
 #endif
 #if 0
 	for(uint8_t i=0;i<NUM_PETAL;i++) {
@@ -673,7 +681,9 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 			double a = round(s_socketCan[can_id].Device(dev_id)->MultiTurnAngle());
 			a *= 100;
 			if(abs(angle - a) < 500) {
+#if 1
 				printf("CAN%u %s[%d] go to %lf degree\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, angle);
+#endif
 				s_socketCan[can_id].Device(dev_id)->WritePosition(angle, max_speed);
 				continue;
 			}
@@ -687,9 +697,9 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 			bAllDone = false;
 
 			double step = angle > a ? 500 : -500; // +/- 1 degree
-//printf("a = %lf\n", a);
+#if 1
 			printf("CAN%u %s[%d] go to %lf degree with step %lf, max speed %u\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, a + step, step, max_speed);
-//printf("a + step = %lf + %lf = %lf\n", a, step, a + step);
+#endif
 			s_socketCan[can_id].Device(dev_id)->WritePosition(a + step, max_speed);
 		}
 
@@ -735,7 +745,10 @@ static inline bool inner_motors_goto(uint8_t can_id, double angle, uint16_t max_
 	return motors_goto(can_id, angle, max_speed, NUM_PETAL-1, NUM_OUTTER_PETAL); // 24 ~ 15
 }
 
-static void home_cmd()
+static bool s_is_home_cmd_success = true;
+bool is_home_cmd_success() { return s_is_home_cmd_success; }
+
+static bool home_cmd()
 {
 	printf("Bring all motors to home position ...\n");
 
@@ -743,39 +756,41 @@ static void home_cmd()
 
 	printf("Raising up all outter petals\n");
 	if(!outter_motors_goto(0, -9000, 200))
-		return;
+		return false;
 
 	// CAN1 RMDx6v3[0~14]
 
 	printf("Rotate all outter petals\n");
 	if(!outter_motors_goto(1, 2400, 200))
-		return;
+		return false;
 
 	// CAN0 M8010L[15~24]
 
 	printf("Raising up all inner petals\n");
 	if(!inner_motors_goto(0, -3000, 200))
-		return;
+		return false;
 
 	// CAN1 RMDx6v3[15~24]
 
 	printf("Rotate all inner petals\n");
 	if(!inner_motors_goto(1, 2400, 200))
-		return;
+		return false;
 
 	// CAN0 M8010L[15~24]
 
 	printf("Low down all inner petals\n");
 	if(!inner_motors_goto(0, 0, 200))
-		return;
+		return false;
 
 	// CAN0 M8010L[0~14]
 
 	printf("Low down all outter petals\n");
 	if(!outter_motors_goto(0, 0, 200))
-		return;
+		return false;
 
 	printf("Done ...\n");
+
+	return true;
 }
 
 static void shutdown_cmd()
@@ -887,10 +902,37 @@ public:
 						break;
 				}
 
+				s.num_warn = 0;
+				s.warn_str.resize(0);
+
+				s.num_err = 0;
+				s.err_str.resize(0);
+
+				if(s_socketCan[0].m_busErrStr.length() > 0) {
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					s.err_str[s.num_err-1] = s_socketCan[0].m_busErrStr;
+				}
+				if(s_socketCan[1].m_busErrStr.length() > 0) {
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					s.err_str[s.num_err-1] = s_socketCan[1].m_busErrStr;
+				}
+				if(is_emergency_stopped()) {
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					s.err_str[s.num_err-1] = "Emergency Stopped !!!";
+				}
+				if(is_home_cmd_success() == false) {
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					s.err_str[s.num_err-1] = "Go to home position failed !!!";
+				}
 				if(this->m_state == e_error) {
-					s.errstr = "error";
-				} else
-					s.errstr = "none";
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					// TODO : Append error string
+				} 
 
 				struct timeval tp;
 				gettimeofday(&tp, NULL);
@@ -1031,7 +1073,7 @@ static int can_main(int argc, char**argv)
 				} else if(tokens[0] == "reset") {
 					reset_cmd();
 				} else if(tokens[0] == "home") {
-					home_cmd();
+					s_is_home_cmd_success = home_cmd();
 				} else if(tokens[0] == "shutdown") {
 					shutdown_cmd();
 				}
@@ -1139,6 +1181,10 @@ echo 26 > /sys/class/gpio/export
 echo in > /sys/class/gpio/gpio26/direction
 echo rising >/sys/class/gpio/gpio26/edge
 
+echo 4 > /sys/class/gpio/export
+echo in > /sys/class/gpio/gpio4/direction
+echo falling >/sys/class/gpio/gpio4/edge
+
 */
 
 /*
@@ -1177,7 +1223,6 @@ static int emergency_main(int gpio)
 			retval = read(fd, valstr, 3);
 
 			if(retval > 0) {
-				//cout << valstr << endl;
 				if(atoi(valstr) == 1) {
 					printf("Emergency Stopped !!!\n");
 					shutdown_cmd();
