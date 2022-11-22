@@ -1,0 +1,12 @@
+[Unit]
+Description=PWM servo RPi4
+After=network.target multi-user.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/pwm-servo-rpi4.py 
+Type=simple
+Restart=on-success
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

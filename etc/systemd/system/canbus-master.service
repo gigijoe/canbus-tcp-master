@@ -1,0 +1,12 @@
+[Unit]
+Description=CAN bus master
+After=network.target multi-user.target
+
+[Service]
+ExecStart=/usr/local/bin/canbus-master.sh
+Type=simple
+Restart=on-success
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
