@@ -59,10 +59,8 @@ int SocketCan::Connect(uint16_t port, uint32_t bitrate)
 	sprintf(ifr.ifr_name, "can%u", port);
 	int r = ioctl(s, SIOCGIFINDEX, &ifr); //指定 can[port] 设备 
 	if(r < 0) {
-		m_busErrStr = ifr.ifr_name;
-		m_busErrStr.append(" : ");
-		m_busErrStr.append(strerror(errno));
-printf("%s\n", m_busErrStr.c_str());
+		m_busErrno = errno;
+		printf("%s ioctl failed : %s\n", ifr.ifr_name, strerror(errno));
 	}
 
 	can_err_mask_t optval = (CAN_ERR_TX_TIMEOUT | 

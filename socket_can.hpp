@@ -55,11 +55,10 @@ protected:
 	} m_stat;
 
 	canid_t m_flag;
+	int m_busErrno;
 
 public:
-	string m_busErrStr;
-
-	SocketCan() : CanBus(), m_busName(nullptr), m_bitrate(0), m_socketFd(-1), m_flag(0) {}
+	SocketCan() : CanBus(), m_busName(nullptr), m_bitrate(0), m_socketFd(-1), m_flag(0), m_busErrno(0) {}
 	~SocketCan() {
 		if(m_socketFd != -1)
 			close(m_socketFd);
@@ -81,6 +80,7 @@ public:
 	void Reset() { m_flag = 0; }
 
 	const char *BusName() const { return m_busName; }
+	const int BusErrno() const { return m_busErrno; }
 };
 
 #endif

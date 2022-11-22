@@ -64,7 +64,7 @@ if __name__ == "__main__":
 	#pwm.setServoPulse(1,500) 
 	for i in range(16):
 		#pwm.setRotationAngle(i, 90)
-		servo.Servo(pca.channels[i]).angle = 90
+		servo.Servo(pca.channels[i], actuation_range=360, min_pulse=500, max_pulse=2600).angle = 180
 
 	lc = lcm.LCM()
 

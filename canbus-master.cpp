@@ -591,20 +591,44 @@ static void can_cmd(vector<string> & tokens)
 	}
 }
 
+#define MAX_NUM_PWM_SERVO 16
+#define MAX_SERVO_ANGLE 360
+
 static void pwm_cmd(vector<string> & tokens)
 {
-	uint8_t channel = stoi(tokens[1]) & 0xff;
-	uint8_t angle = stoi(tokens[2]) & 0xff;
-	if(angle > 180)
-		angle = 180;
+	static uint16_t zero_bias[MAX_NUM_PWM_SERVO] = {0};
 
-	printf("PWM%u set angle %u degree\n", channel, angle);
+	if(tokens[1] == "pos") {
+		uint8_t channel = stoi(tokens[2]) & 0xff;
+		if(channel >= MAX_NUM_PWM_SERVO) {
+			printf("PWM%u out of range !!!\n", channel);
+			return;
+		}
 
-	servolcm::pwm_t r;
-	r.channel = channel;
-	r.angle = angle;
+		int16_t angle = stoi(tokens[3]);
+		if(angle > MAX_SERVO_ANGLE)
+			angle = MAX_SERVO_ANGLE;
 
-	s_lcm.publish("PWM", &r);
+		printf("PWM%u set angle %u degree\n", channel, angle);
+
+		servolcm::pwm_t r;
+		r.channel = channel;
+		r.angle = angle;
+
+		s_lcm.publish("PWM", &r);
+	} else if(tokens[1] == "zero_bias") {
+		uint8_t channel = stoi(tokens[2]) & 0xff;
+		if(channel >= MAX_NUM_PWM_SERVO) {
+			printf("PWM%u out of range !!!\n", channel);
+			return;
+		}
+
+		int16_t bias = stoi(tokens[3]);
+		if(bias > MAX_SERVO_ANGLE / 2)
+			bias = MAX_SERVO_ANGLE / 2;
+		
+		zero_bias[channel] = bias;
+	}
 }
 
 static void status_cmd()
@@ -810,6 +834,8 @@ static void shutdown_cmd()
 *
 */
 
+#include <linux/can/error.h>
+
 class MasterServer {
 private:
 	uint8_t m_scenario;
@@ -905,34 +931,118 @@ public:
 				s.num_warn = 0;
 				s.warn_str.resize(0);
 
+				for(int i=0;i<NUM_SOCKETCAN;i++) {
+					for(int j=0;j<s_socketCan[i].NumberDevices();j++) {
+						CanMotor *cm = s_socketCan[i].Device(j);
+						if(cm->Temperature() >= 60) {
+							s.num_warn++;
+							s.warn_str.resize(s.num_warn);
+							std::ostringstream ss;
+							ss << "CAN " << i << " Motor " << j+1 << " temperature is " << cm->Temperature() << " degree";
+							s.warn_str[s.num_warn-1] = ss.str();
+						}
+
+						if(cm->Current() > 1.0f) {
+							s.num_warn++;
+							s.warn_str.resize(s.num_warn);
+							std::ostringstream ss;
+							ss << "CAN " << i << " Motor " << j+1 << " current is " << cm->Current() << " amp";
+							s.warn_str[s.num_warn-1] = ss.str();
+						}
+					}
+				}
+
 				s.num_err = 0;
 				s.err_str.resize(0);
 
-				if(s_socketCan[0].m_busErrStr.length() > 0) {
+				if(s_socketCan[0].BusErrno() != 0) {
 					s.num_err++;
 					s.err_str.resize(s.num_err);
-					s.err_str[s.num_err-1] = s_socketCan[0].m_busErrStr;
+					std::ostringstream ss;
+					ss << "CAN 0 bus error : " << strerror(s_socketCan[0].BusErrno());
+					s.err_str[s.num_err-1] = ss.str();
+
+					this->m_state = e_error;
 				}
-				if(s_socketCan[1].m_busErrStr.length() > 0) {
+				if(s_socketCan[1].BusErrno() != 0) {
 					s.num_err++;
 					s.err_str.resize(s.num_err);
-					s.err_str[s.num_err-1] = s_socketCan[1].m_busErrStr;
+					std::ostringstream ss;
+					ss << "CAN 1 bus error : " << strerror(s_socketCan[1].BusErrno());
+					s.err_str[s.num_err-1] = ss.str();
+
+					this->m_state = e_error;
+				}
+				if(s_socketCan[0].Flag() & CAN_ERR_FLAG) {
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					canid_t flag = s_socketCan[0].Flag();
+					std::ostringstream ss;
+					ss << "CAN 0 error : ";
+					if(flag & CAN_ERR_TX_TIMEOUT)
+						ss << "TX timeout (by netdevice driver)";
+					if(flag & CAN_ERR_LOSTARB   )
+						ss << "lost arbitration";
+					if(flag & CAN_ERR_CRTL      )
+						ss << "controller problems";
+					if(flag & CAN_ERR_PROT      )
+						ss << "protocol violations";
+					if(flag & CAN_ERR_TRX       )
+						ss << "transceiver status";
+					if(flag & CAN_ERR_ACK       )
+						ss << "received no ACK on transmission";
+					if(flag & CAN_ERR_BUSOFF    )
+						ss << "bus off";
+					if(flag & CAN_ERR_BUSERROR  )
+						ss << "bus error (may flood!)";
+					if(flag & CAN_ERR_RESTARTED )
+						ss << "controller restarted";
+					s.err_str[s.num_err-1] = ss.str();
+
+					this->m_state = e_error;
+				}
+				if(s_socketCan[1].Flag() & CAN_ERR_FLAG) {
+					s.num_err++;
+					s.err_str.resize(s.num_err);
+					canid_t flag = s_socketCan[1].Flag();
+					std::ostringstream ss;
+					ss << "CAN 1 error : ";
+					if(flag & CAN_ERR_TX_TIMEOUT)
+						ss << "TX timeout (by netdevice driver)";
+					if(flag & CAN_ERR_LOSTARB   )
+						ss << "lost arbitration";
+					if(flag & CAN_ERR_CRTL      )
+						ss << "controller problems";
+					if(flag & CAN_ERR_PROT      )
+						ss << "protocol violations";
+					if(flag & CAN_ERR_TRX       )
+						ss << "transceiver status";
+					if(flag & CAN_ERR_ACK       )
+						ss << "received no ACK on transmission";
+					if(flag & CAN_ERR_BUSOFF    )
+						ss << "bus off";
+					if(flag & CAN_ERR_BUSERROR  )
+						ss << "bus error (may flood!)";
+					if(flag & CAN_ERR_RESTARTED )
+						ss << "controller restarted";
+					s.err_str[s.num_err-1] = ss.str();
+
+					this->m_state = e_error;
 				}
 				if(is_emergency_stopped()) {
 					s.num_err++;
 					s.err_str.resize(s.num_err);
 					s.err_str[s.num_err-1] = "Emergency Stopped !!!";
+
+					this->m_state = e_error;
 				}
 				if(is_home_cmd_success() == false) {
 					s.num_err++;
 					s.err_str.resize(s.num_err);
 					s.err_str[s.num_err-1] = "Go to home position failed !!!";
+
+					this->m_state = e_error;
 				}
-				if(this->m_state == e_error) {
-					s.num_err++;
-					s.err_str.resize(s.num_err);
-					// TODO : Append error string
-				} 
 
 				struct timeval tp;
 				gettimeofday(&tp, NULL);
@@ -993,7 +1103,7 @@ Usage: COMMAND [PARAMETERS]\n\
 Management Commands:\n\
   can [bus ID] [dev ID] <reset | status | pos <position speed> | test <position speed> | origin >\n\
   tcp <reconnect | disconnect>\n\
-  pwm [channel] [angle]\n\
+  pwm pos [channel] [angle]\n\
   play [file]\n\
   origin\n\
   zero\n\
@@ -1064,7 +1174,7 @@ static int can_main(int argc, char**argv)
 					else
 						printf(help);
 				} else if(tokens[0] == "pwm") {
-					if(tokens.size() >= 3)
+					if(tokens.size() >= 4)
 						pwm_cmd(tokens);
 					else
 						printf(help);
