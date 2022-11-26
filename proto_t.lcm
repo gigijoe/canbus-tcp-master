@@ -3,7 +3,6 @@ package protolcm;
 struct status_t 
 {
 	byte scenario;
-	string mode;
 	string state;
 	int32_t num_warn;
 	string warn_str[num_warn];
@@ -15,8 +14,7 @@ struct status_t
 struct command_t
 {
 	string action;
-	byte scenario;
-	byte script;
+	byte index;
 	int64_t timestamp;
 }
 

@@ -711,7 +711,7 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 				s_socketCan[can_id].Device(dev_id)->WritePosition(angle, max_speed);
 				continue;
 			}
-#if 1
+#if 0
 			printf("Warning !!! Warning !!! Warning !!! \n");
 			printf("MOTORS 2,5,8,11,14 NOT INSTALLED !!!\n");
 
@@ -839,7 +839,6 @@ static void shutdown_cmd()
 class MasterServer {
 private:
 	uint8_t m_scenario;
-	uint8_t m_mode;
 	typedef enum { e_shutdown, e_reset, e_idle, e_home, e_playing, e_error } State;
 	std::atomic<State> m_state;
 
@@ -852,8 +851,7 @@ public:
 					   const protolcm::command_t *msg)
 	{
 		printf("  action   = %s\n", msg->action.c_str());
-		printf("  scenario   = %d\n", msg->scenario);
-		printf("  script   = %d\n", msg->script);
+		printf("  index   = %d\n", msg->index);
 		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
 		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
 
@@ -870,6 +868,12 @@ public:
 			std::thread t = ResetThread();
 			t.detach();
 		} else if(strcmp(msg->action.c_str(), "stop") == 0) {
+			if(m_state < e_playing)
+				return;
+
+			s_emergency.notify_all(); // Not really emergency stop, just use it to stop playing ...
+
+			m_state = e_reset; // Needs home ...
 		} else if(strcmp(msg->action.c_str(), "home") == 0) {
 			if(m_state < e_reset || m_state >= e_home)
 				return;
@@ -880,16 +884,18 @@ public:
 			if(m_state != e_idle)
 				return;
 
-			m_scenario = msg->scenario;
+			if(m_scenario != 0)
+				return;
 
 			char fn[128];
-			//snprintf(fn, 128, "/usr/local/share/flower_s%d%02d.csv", msg->scenario, msg->script);
-			snprintf(fn, 128, "../flower.csv");
+			snprintf(fn, 128, "/usr/local/share/flower_%02d.csv", msg->index);
 
 			if(m_actionThread.joinable())
 				m_actionThread.join();
 
 			m_actionThread = PlayThread(fn);
+		} else if(strcmp(msg->action.c_str(), "scenario") == 0) {
+			m_scenario = msg->index;
 		}
 	}
 
@@ -898,6 +904,34 @@ public:
 	{
 		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
 		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
+		printf("  human count   = ");
+		for(int i=0;i<5;i++) {
+			printf("%d ", msg->human_counts[i]);
+		}
+		printf("\n");
+
+		if(m_state != e_idle)
+			return;
+
+		if(m_scenario != 1)
+			return;
+
+		uint8_t region = 0;
+		uint8_t human_counts = msg->human_counts[0];
+		for(int i=1;i<5;i++) {
+			if(human_counts < msg->human_counts[i]) {
+				human_counts = msg->human_counts[i];
+				region = i;
+			}
+		}
+
+		char fn[128];
+		snprintf(fn, 128, "/usr/local/share/flower_%02d_%02d.csv", region, human_counts % 5);
+
+		if(m_actionThread.joinable())
+			m_actionThread.join();
+
+		m_actionThread = PlayThread(fn);
 	}
 
 	std::thread StatusThread() {
@@ -906,13 +940,6 @@ public:
 				protolcm::status_t s;
 				s.scenario = this->m_scenario;
 				
-				switch(this->m_mode) {
-					case 0: s.mode = "auto";
-						break;
-					case 1: s.mode = "manual";
-						break;
-				}
-
 				switch(this->m_state) {
 					case e_shutdown: s.state = "shutdown";
 						break;

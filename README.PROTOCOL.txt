@@ -11,7 +11,6 @@
 #
 
 Scenario index : 0 ~ 2
-Mode : manual / auto
 State : shutdown / reset / idle / home / playing / error
 
 RPi4 每秒發送目前 Scenario index / Mode / State 給 PC
@@ -20,7 +19,7 @@ RPi4 每秒發送目前 Scenario index / Mode / State 給 PC
 # 大花 Command
 #
 
-Action : shutdown / reset / stop / home / play 
+Action : shutdown / reset / stop / home / play / scenario
 
 #
 # 大花 Scenario
@@ -32,19 +31,23 @@ Action : shutdown / reset / stop / home / play
 # 大花 Scenario 0 (10組劇本,亂數播放或指定播放,表情辨識採樣)
 #
 
-PC 發送 Stop 給 RPi4 (等待)
+PC 檢查 Status == idle 
 |
-|-PC 檢查 Mode == auto / Status == idle 
-  |
-  |-PC 發送 Scenario index 0 / Script index (0 ~ 9) 給 RPi4
-    |
-    |-PC 檢查 Scenario index == 0 / Script index == 0 ~ 9 / Status == playing)
+|-PC 發送 command_t->action = scenario / index = 0 給 RPi4
+   |
+   |-PC 發送 command_t->action = play / index = 0 ~ 9 給 RPi4
 
 #
 # 大花 Scenario 1 (5 x 5 組劇本,依據人流數據亂數播放)
 #
 
 PC 每秒發送目前5個區域中的人數
+
+PC 檢查 Status == idle 
+|
+|-PC 發送 command_t->action = scenario / index = 1 給 RPi4
+   |
+   |-PC 發送 region_t->human_counts[5] 給 RPi4
 
 #
 # proto_t.lcm
@@ -55,7 +58,6 @@ package protolcm
 struct status_t 
 {
 	byte scenario;
-	string mode;
 	string state;
 	int32_t num_warn;
 	string warn_str[num_warn];
@@ -67,8 +69,7 @@ struct status_t
 struct command_t
 {
 	string action;
-	byte scenario;
-	byte script;
+	byte index;
 	int64_t timestamp;
 }
 
