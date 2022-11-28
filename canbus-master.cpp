@@ -54,6 +54,8 @@ using std::chrono::microseconds;
 using std::chrono::milliseconds;
 using std::chrono::seconds;
 
+#define SYSFS_GPIO_DIR "/sys/class/gpio"  
+
 //using namespace cv;
 using namespace std;
 
@@ -264,8 +266,9 @@ typedef struct {
 } Petal;
 
 #define NUM_PETAL 25
-#define NUM_EXTRA_PETAL 7
-static vector<Petal> s_petals[NUM_PETAL + NUM_EXTRA_PETAL];
+#define NUM_EXTRA_PETAL 5
+#define NUM_EXTRAL_LED 1
+static vector<Petal> s_petals[NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED];
 
 static bool parse_flower_csv(const char *filename) {
 	FILE *fp = fopen(filename, "r");
@@ -319,7 +322,7 @@ static bool parse_flower_csv(const char *filename) {
 		uint8_t id = atou8(&argv[0][1]);
 #if 1
 		//if(id > 0 && id <= NUM_PETAL) {
-		if(id > 0 && id <= (NUM_PETAL + NUM_EXTRA_PETAL)) {
+		if(id > 0 && id <= (NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED)) {
 			Petal pl;
 			pl.pitch = atof(argv[1]);
 			pl.roll = atof(argv[2]);
@@ -406,8 +409,8 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 		});
 	}
 #endif
-	vector<Petal>::iterator ppls[NUM_PETAL + NUM_EXTRA_PETAL];
-	for(uint8_t i=0;i<NUM_PETAL + NUM_EXTRA_PETAL;i++) {
+	vector<Petal>::iterator ppls[NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED];
+	for(uint8_t i=0;i<NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED;i++) {
 		ppls[i] = s_petals[i].begin();
 	}
 
@@ -467,6 +470,14 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 
 				s_lcm.publish("PWM", &r);
 				++ppls[ei];
+			}
+
+			for(uint8_t i=0;i<NUM_EXTRAL_LED;i++) {
+				uint8_t ei = i + NUM_PETAL + NUM_EXTRAL_LED;
+				if(ppls[ei] == s_petals[ei].end())
+					continue;
+
+				// TODO : GPIO control ?
 			}
 
 			printf("\rpercentage %ld%%", distance(s_petals[0].begin(), ppls[0]) * 100 / s_petals[0].size());
@@ -628,6 +639,49 @@ static void pwm_cmd(vector<string> & tokens)
 			bias = MAX_SERVO_ANGLE / 2;
 		
 		zero_bias[channel] = bias;
+	}
+}
+
+static void gpio_cmd(vector<string> & tokens)
+{
+	uint8_t port = stoi(tokens[1]) & 0xff;
+
+	int fd;  
+	char buf[64];  
+   
+	snprintf(buf, sizeof(buf), SYSFS_GPIO_DIR "/gpio%d/value", port);  
+
+	if(tokens.size() > 2) {
+		fd = open(buf, O_WRONLY);  
+		if (fd < 0) {  
+			perror("gpio/set-value");
+			return;
+		}  
+
+		uint8_t value = stoi(tokens[2]) & 0xff;
+		if (value)  
+			write(fd, "1", 2);  
+		else  
+			write(fd, "0", 2);  
+
+		close(fd);
+	} else {
+		fd = open(buf, O_RDONLY);  
+		if (fd < 0) {  
+			perror("gpio/get-value");
+			return;
+		}
+
+		char ch;
+		read(fd, &ch, 1);  
+	
+		printf("GPIO %d is %c", port, ch);
+/*
+		if (ch != '0') {  
+		} else {  
+		}
+*/
+		close(fd);
 	}
 }
 
@@ -905,6 +959,7 @@ public:
 		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
 		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
 		printf("  human count   = ");
+		
 		for(int i=0;i<5;i++) {
 			printf("%d ", msg->human_counts[i]);
 		}
@@ -917,16 +972,16 @@ public:
 			return;
 
 		uint8_t region = 0;
-		uint8_t human_counts = msg->human_counts[0];
+		uint8_t counts = msg->human_counts[0];
 		for(int i=1;i<5;i++) {
-			if(human_counts < msg->human_counts[i]) {
-				human_counts = msg->human_counts[i];
+			if(counts < msg->human_counts[i]) {
+				counts = msg->human_counts[i];
 				region = i;
 			}
 		}
 
 		char fn[128];
-		snprintf(fn, 128, "/usr/local/share/flower_%02d_%02d.csv", region, human_counts % 5);
+		snprintf(fn, 128, "/usr/local/share/flower_%02d_%02d.csv", region, counts % 5);
 
 		if(m_actionThread.joinable())
 			m_actionThread.join();
@@ -1131,6 +1186,7 @@ Management Commands:\n\
   can [bus ID] [dev ID] <reset | status | pos <position speed> | test <position speed> | origin >\n\
   tcp <reconnect | disconnect>\n\
   pwm pos [channel] [angle]\n\
+  gpio port [0 | 1]\n\
   play [file]\n\
   origin\n\
   zero\n\
@@ -1203,6 +1259,11 @@ static int can_main(int argc, char**argv)
 				} else if(tokens[0] == "pwm") {
 					if(tokens.size() >= 4)
 						pwm_cmd(tokens);
+					else
+						printf(help);
+				} else if(tokens[0] == "gpio") {
+					if(tokens.size() >= 2)
+						gpio_cmd(tokens);
 					else
 						printf(help);
 				} else if(tokens[0] == "status") {
@@ -1328,10 +1389,10 @@ echo falling >/sys/class/gpio/gpio4/edge
 # config.txt
 
 # Make 17 to 21 inputs
-      gpio=17-21=ip
+	  gpio=17-21=ip
 
 # Change the pull on (input) pins 18 and 20
-      gpio=18,20=pu
+	  gpio=18,20=pu
 */
 
 static int emergency_main(int gpio)
@@ -1339,7 +1400,7 @@ static int emergency_main(int gpio)
 	printf("Emergency GPIO is %d\n", EMERGENCY_GPIO);
 
 	char buf[64];
-	snprintf(buf, 64, "/sys/class/gpio/gpio%d/value", gpio);
+	snprintf(buf, 64, SYSFS_GPIO_DIR"/gpio%d/value", gpio);
 	int fd = open(buf, O_RDONLY);
 	if(fd < 0)
 		return -1;

@@ -45,9 +45,18 @@ class UI(QWidget):
 		self.btnPlay.move(432, 16)  
 		self.btnPlay.clicked.connect(self.cbPlay)
 
+		self.btnPlay = QPushButton('scenario', self)
+		self.btnPlay.resize(96, 32)
+		self.btnPlay.move(536, 16)  
+		self.btnPlay.clicked.connect(self.cbScenario)
+
 		self.cboScenario = QComboBox(self)
 		self.cboScenario.addItems(['Scenario 0', 'Scenario 1'])
 		self.cboScenario.move(8, 64)	
+
+		self.cboPlay = QComboBox(self)
+		self.cboPlay.addItems(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+		self.cboPlay.move(112, 64)	
 
 		self.labState = QLabel('Unknown', self)
 		self.labState.resize(144, 32)
@@ -83,8 +92,7 @@ class UI(QWidget):
 	def cbShutdown(self):
 		msg = command_t()
 		msg.action = "shutdown"
-		msg.scenario = self.cboScenario.currentIndex()
-		msg.script = 0
+		msg.index = 0
 		now = datetime.now()
 		msg.timestamp = int(datetime.timestamp(now))
 
@@ -93,8 +101,7 @@ class UI(QWidget):
 	def cbReset(self):
 		msg = command_t()
 		msg.action = "reset"
-		msg.scenario = self.cboScenario.currentIndex()
-		msg.script = 0
+		msg.index = 0
 		now = datetime.now()
 		msg.timestamp = int(datetime.timestamp(now))
 
@@ -103,8 +110,7 @@ class UI(QWidget):
 	def cbStop(self):
 		msg = command_t()
 		msg.action = "stop"
-		msg.scenario = self.cboScenario.currentIndex()
-		msg.script = 0
+		msg.index = 0
 		now = datetime.now()
 		msg.timestamp = int(datetime.timestamp(now))
 
@@ -113,8 +119,7 @@ class UI(QWidget):
 	def cbHome(self):
 		msg = command_t()
 		msg.action = "home"
-		msg.scenario = self.cboScenario.currentIndex()
-		msg.script = 0
+		msg.index = 0
 		now = datetime.now()
 		msg.timestamp = int(datetime.timestamp(now))
 
@@ -123,8 +128,16 @@ class UI(QWidget):
 	def cbPlay(self):
 		msg = command_t()
 		msg.action = "play"
-		msg.scenario = self.cboScenario.currentIndex()
-		msg.script = 0
+		msg.index = self.cboPlay.currentIndex()
+		now = datetime.now()
+		msg.timestamp = int(datetime.timestamp(now))
+
+		lc.publish("SERVER_COMMAND", msg.encode())
+
+	def cbScenario(self):
+		msg = command_t()
+		msg.action = "scenario"
+		msg.index = self.cboScenario.currentIndex()
 		now = datetime.now()
 		msg.timestamp = int(datetime.timestamp(now))
 

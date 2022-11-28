@@ -10,7 +10,7 @@
 # 大花 Status
 #
 
-Scenario index : 0 ~ 2
+Scenario index : 0 ~ 1
 State : shutdown / reset / idle / home / playing / error
 
 RPi4 每秒發送目前 Scenario index / Mode / State 給 PC
