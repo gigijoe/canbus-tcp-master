@@ -22,7 +22,7 @@ class UI(QWidget):
 
 		self.btnShutdown = QPushButton('shutdown', self)
 		self.btnShutdown.resize(96, 32)
-		self.btnShutdown.move(8, 16)  
+		self.btnShutdown.move(16, 16)  
 		self.btnShutdown.clicked.connect(self.cbShutdown)
 
 		self.btnReset = QPushButton('reset', self)
@@ -30,10 +30,10 @@ class UI(QWidget):
 		self.btnReset.move(120, 16)  
 		self.btnReset.clicked.connect(self.cbReset)
 
-		self.btnHome = QPushButton('stop', self)
-		self.btnHome.resize(96, 32)
-		self.btnHome.move(224, 16)  
-		self.btnHome.clicked.connect(self.cbStop)
+		self.btnStop = QPushButton('stop', self)
+		self.btnStop.resize(96, 32)
+		self.btnStop.move(224, 16)  
+		self.btnStop.clicked.connect(self.cbStop)
 
 		self.btnHome = QPushButton('home', self)
 		self.btnHome.resize(96, 32)
@@ -45,18 +45,19 @@ class UI(QWidget):
 		self.btnPlay.move(432, 16)  
 		self.btnPlay.clicked.connect(self.cbPlay)
 
-		self.btnPlay = QPushButton('scenario', self)
-		self.btnPlay.resize(96, 32)
-		self.btnPlay.move(536, 16)  
-		self.btnPlay.clicked.connect(self.cbScenario)
+		self.btnScenario = QPushButton('scenario', self)
+		self.btnScenario.resize(96, 32)
+		self.btnScenario.move(536, 16)  
+		self.btnScenario.clicked.connect(self.cbScenario)
 
 		self.cboScenario = QComboBox(self)
 		self.cboScenario.addItems(['Scenario 0', 'Scenario 1'])
-		self.cboScenario.move(8, 64)	
+		self.cboScenario.move(16, 64)	
 
 		self.cboPlay = QComboBox(self)
 		self.cboPlay.addItems(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
-		self.cboPlay.move(112, 64)	
+		self.cboPlay.resize(96, 24)
+		self.cboPlay.move(120, 64)	
 
 		self.labState = QLabel('Unknown', self)
 		self.labState.resize(144, 32)
@@ -169,7 +170,7 @@ if __name__ == "__main__":
 	app = QApplication(sys.argv)
 	ui = UI()
 
-	lc = lcm.LCM()
+	lc = lcm.LCM("udpm://239.255.76.67:7667?ttl=1")
 	s_status = lc.subscribe("SERVER_STATUS", ui.status_handler)
 
 	lcm_thread = Thread(target=lcm_task)

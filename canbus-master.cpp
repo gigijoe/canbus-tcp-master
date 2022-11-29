@@ -119,10 +119,12 @@ void SocketCanThread(SocketCan & socketCan, uint16_t port, uint32_t bitrate, uin
 			if(typeid(T) == typeid(RMDx6)) {
 			} else if(typeid(T) == typeid(RMDx6v3)) {
 			} else if(typeid(T) == typeid(M8010L)) {
+#if 0
 				if(i < 15)
 					socketCan.Device(i)->PositionLimitation(0, -10000); // 0 to -100 degree
 				else
 					socketCan.Device(i)->PositionLimitation(0, -9500); // 0 to -95 degree
+#endif
 			}
 		}
 
@@ -839,9 +841,12 @@ static bool home_cmd()
 	// CAN1 RMDx6v3[0~14]
 
 	printf("Rotate all outter petals\n");
+#if 0
 	if(!outter_motors_goto(1, 2400, 200))
 		return false;
-
+#else
+	outter_motors_goto(1, 2400, 200);
+#endif
 	// CAN0 M8010L[15~24]
 
 	printf("Raising up all inner petals\n");
@@ -851,9 +856,12 @@ static bool home_cmd()
 	// CAN1 RMDx6v3[15~24]
 
 	printf("Rotate all inner petals\n");
+#if 0
 	if(!inner_motors_goto(1, 2400, 200))
 		return false;
-
+#else	
+	inner_motors_goto(1, 2400, 200);
+#endif
 	// CAN0 M8010L[15~24]
 
 	printf("Low down all inner petals\n");

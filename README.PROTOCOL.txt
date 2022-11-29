@@ -13,7 +13,7 @@
 Scenario index : 0 ~ 1
 State : shutdown / reset / idle / home / playing / error
 
-RPi4 每秒發送目前 Scenario index / Mode / State 給 PC
+RPi4 每秒發送目前 Scenario index / State 給 PC
 
 #
 # 大花 Command
