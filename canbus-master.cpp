@@ -925,14 +925,14 @@ public:
 			if(m_state == e_shutdown)
 				return;
 
-			std::thread t = ShutdownThread();
-			t.detach();
-		} else if(strcmp(msg->action.c_str(), "reset") == 0) {
 			s_socketCan[0].ResetFlag();
 			s_socketCan[1].ResetFlag();
 			s_socketCan[0].ResetBusError();
 			s_socketCan[1].ResetBusError();
 
+			std::thread t = ShutdownThread();
+			t.detach();
+		} else if(strcmp(msg->action.c_str(), "reset") == 0) {			
 			if(m_state >= e_reset)
 				return;
 
