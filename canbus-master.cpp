@@ -761,7 +761,7 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 			double a = round(s_socketCan[can_id].Device(dev_id)->MultiTurnAngle());
 			a *= 100;
 			if(abs(angle - a) < 500) {
-#if 1
+#if 0
 				printf("CAN%u %s[%d] go to %lf degree\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, angle);
 #endif
 				s_socketCan[can_id].Device(dev_id)->WritePosition(angle, max_speed);
@@ -777,23 +777,26 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 			bAllDone = false;
 
 			double step = angle > a ? 500 : -500; // +/- 1 degree
-#if 1
+#if 0
 			printf("CAN%u %s[%d] go to %lf degree with step %lf, max speed %u\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, a + step, step, max_speed);
 #endif
 			s_socketCan[can_id].Device(dev_id)->WritePosition(a + step, max_speed);
 		}
 
 		if(loopCount++ > 180) {
-			printf("Timeout !!!\n");
+			printf("\nTimeout !!!\n");
 			bAllDone = false;
 			break;
+		} else {
+			printf(".");
+			fflush(stdout);
 		}
 
 		if(select_stdin(0) > 0) { // No timeout
 			char ch;
 			::read(0, &ch, 1); // Read one character in raw mode.
 			if(ch == 'q' || ch == 'Q'){
-				printf("Stopped !!!\n");
+				printf("\nStopped !!!\n");
 				bAllDone = false;
 				break;
 			}
@@ -841,7 +844,7 @@ static bool home_cmd()
 	// CAN1 RMDx6v3[0~14]
 
 	printf("Rotate all outter petals\n");
-#if 0
+#if 1
 	if(!outter_motors_goto(1, 2400, 200))
 		return false;
 #else
@@ -856,7 +859,7 @@ static bool home_cmd()
 	// CAN1 RMDx6v3[15~24]
 
 	printf("Rotate all inner petals\n");
-#if 0
+#if 1
 	if(!inner_motors_goto(1, 2400, 200))
 		return false;
 #else	
@@ -912,11 +915,12 @@ public:
 	void handleCommand(const lcm::ReceiveBuffer *rbuf, const std::string &chan,
 					   const protolcm::command_t *msg)
 	{
+/*
 		printf("  action   = %s\n", msg->action.c_str());
 		printf("  index   = %d\n", msg->index);
 		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
 		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
-
+*/
 		if(strcmp(msg->action.c_str(), "shutdown") == 0) {
 			if(m_state == e_shutdown)
 				return;
@@ -924,6 +928,11 @@ public:
 			std::thread t = ShutdownThread();
 			t.detach();
 		} else if(strcmp(msg->action.c_str(), "reset") == 0) {
+			s_socketCan[0].ResetFlag();
+			s_socketCan[1].ResetFlag();
+			s_socketCan[0].ResetBusError();
+			s_socketCan[1].ResetBusError();
+
 			if(m_state >= e_reset)
 				return;
 
@@ -964,10 +973,11 @@ public:
 	void handleRegion(const lcm::ReceiveBuffer *rbuf, const std::string &chan,
 					   const protolcm::region_t *msg)
 	{
+/*
 		printf("  receive time   = %lld\n", (long long) rbuf->recv_utime);
 		printf("  timestamp   = %lld\n", (long long) msg->timestamp);
 		printf("  human count   = ");
-		
+*/		
 		for(int i=0;i<5;i++) {
 			printf("%d ", msg->human_counts[i]);
 		}
@@ -1368,6 +1378,7 @@ static int lcm_main(int argc, char**argv)
 #endif
 	
 	s_lcm.subscribe("SERVER_COMMAND", &MasterServer::handleCommand, &s_server);
+	s_lcm.subscribe("region_command", &MasterServer::handleRegion, &s_server);
 
 	std::thread server_status_thread = s_server.StatusThread();
 

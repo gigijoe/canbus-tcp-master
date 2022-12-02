@@ -77,10 +77,11 @@ public:
 	int BusLoad(); // Return percentage of bus loading
 
 	inline canid_t Flag() const { return m_flag; }
-	void Reset() { m_flag = 0; }
+	void ResetFlag() { m_flag = 0; }
 
 	const char *BusName() const { return m_busName; }
 	const int BusErrno() const { return m_busErrno; }
+	void ResetBusError() { m_busErrno = 0; }
 };
 
 #endif
