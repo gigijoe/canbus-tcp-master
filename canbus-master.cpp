@@ -438,6 +438,8 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 	1 : RMD X6V3 x 25
 */
 				float p0 = ppls[i]->pitch;
+				//if(i == 5) // ID 6
+				//	p0 += 7.2;
 				s_socketCan[0].Device(i)->WritePosition((int32_t)(p0 * 100), d_pitch[i] & 0xffff); // 0.01 degree
 				//if(i == 0)
 				//	printf("s_socketCan[0].Device(%d) -> angle(%f) deg, speed(%u) dps\n", i, p0, d_pitch[i]);
@@ -581,7 +583,7 @@ static void can_cmd(vector<string> & tokens)
 					uint16_t speed = stoi(tokens[5]);
 					s_socketCan[busIndex].Device(motorIndex)->WritePosition(pos, speed);
 				} else
-					s_socketCan[busIndex].Device(motorIndex)->WritePosition(pos, 200);
+					s_socketCan[busIndex].Device(motorIndex)->WritePosition(pos, 10);
 				printf("CAN%d %s[%d] go to position %d (0.01 degree)\n", 
 					busIndex, 
 					s_socketCan[busIndex].Device(motorIndex)->Name(), 
@@ -760,7 +762,7 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 		for(int dev_id=dev_begin;dev_id>=dev_end;dev_id--) {
 			double a = round(s_socketCan[can_id].Device(dev_id)->MultiTurnAngle());
 			a *= 100;
-			if(abs(angle - a) < 500) {
+			if(abs(angle - a) < 200) {
 #if 0
 				printf("CAN%u %s[%d] go to %lf degree\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, angle);
 #endif
@@ -776,7 +778,7 @@ static bool motors_goto(uint8_t can_id, double angle, uint16_t max_speed, uint8_
 #endif
 			bAllDone = false;
 
-			double step = angle > a ? 500 : -500; // +/- 1 degree
+			double step = angle > a ? 200 : -200; // +/- 1 degree
 #if 0
 			printf("CAN%u %s[%d] go to %lf degree with step %lf, max speed %u\n", can_id, s_socketCan[can_id].Device(dev_id)->Name(), dev_id, a + step, step, max_speed);
 #endif
@@ -833,18 +835,18 @@ bool is_home_cmd_success() { return s_is_home_cmd_success; }
 
 static bool home_cmd()
 {
-	printf("Bring all motors to home position ...\n");
+	printf("\nBring all motors to home position ...\n");
 
 	// CAN0 M8010L[0~14]
 
-	printf("Raising up all outter petals\n");
-	if(!outter_motors_goto(0, -9000, 200))
+	printf("\nRaising up all outter petals\n");
+	if(!outter_motors_goto(0, -8000, 200))
 		return false;
 
 	// CAN1 RMDx6v3[0~14]
 
-	printf("Rotate all outter petals\n");
-#if 1
+	printf("\nRotate all outter petals\n");
+#if 0
 	if(!outter_motors_goto(1, 2400, 200))
 		return false;
 #else
@@ -852,14 +854,14 @@ static bool home_cmd()
 #endif
 	// CAN0 M8010L[15~24]
 
-	printf("Raising up all inner petals\n");
-	if(!inner_motors_goto(0, -3000, 200))
+	printf("\nRaising up all inner petals\n");
+	if(!inner_motors_goto(0, -4000, 200))
 		return false;
 
 	// CAN1 RMDx6v3[15~24]
 
-	printf("Rotate all inner petals\n");
-#if 1
+	printf("\nRotate all inner petals\n");
+#if 0
 	if(!inner_motors_goto(1, 2400, 200))
 		return false;
 #else	
@@ -867,17 +869,68 @@ static bool home_cmd()
 #endif
 	// CAN0 M8010L[15~24]
 
-	printf("Low down all inner petals\n");
+	printf("\nLow down all inner petals\n");
 	if(!inner_motors_goto(0, 0, 200))
 		return false;
 
 	// CAN0 M8010L[0~14]
 
-	printf("Low down all outter petals\n");
+	printf("\nLow down all outter petals\n");
 	if(!outter_motors_goto(0, 0, 200))
 		return false;
 
-	printf("Done ...\n");
+	printf("\nDone ...\n");
+
+	return true;
+}
+
+static bool safe_cmd()
+{
+	printf("\nBring all motors to safe position ...\n");
+
+	// CAN0 M8010L[0~14]
+
+	printf("\nRaising up all outter petals\n");
+	if(!outter_motors_goto(0, -8000, 200))
+		return false;
+
+	// CAN1 RMDx6v3[0~14]
+
+	printf("\nRotate all outter petals\n");
+#if 0
+	if(!outter_motors_goto(1, 2400, 200))
+		return false;
+#else
+	outter_motors_goto(1, 0, 200);
+#endif
+	// CAN0 M8010L[15~24]
+
+	printf("\nRaising up all inner petals\n");
+	if(!inner_motors_goto(0, -4000, 200))
+		return false;
+
+	// CAN1 RMDx6v3[15~24]
+
+	printf("\nRotate all inner petals\n");
+#if 0
+	if(!inner_motors_goto(1, 2400, 200))
+		return false;
+#else	
+	inner_motors_goto(1, 0, 200);
+#endif
+	// CAN0 M8010L[15~24]
+
+	printf("\nLow down all inner petals\n");
+	if(!inner_motors_goto(0, -2000, 200))
+		return false;
+
+	// CAN0 M8010L[0~14]
+
+	printf("\nLow down all outter petals\n");
+	if(!outter_motors_goto(0, -2000, 200))
+		return false;
+
+	printf("\nDone ...\n");
 
 	return true;
 }
@@ -1290,6 +1343,8 @@ static int can_main(int argc, char**argv)
 					reset_cmd();
 				} else if(tokens[0] == "home") {
 					s_is_home_cmd_success = home_cmd();
+				} else if(tokens[0] == "safe") {
+					safe_cmd();
 				} else if(tokens[0] == "shutdown") {
 					shutdown_cmd();
 				}

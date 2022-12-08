@@ -542,14 +542,29 @@ int RMDx6v3::Reset()
 	int r = 0;
 
 	uint8_t data[8] = {0};
-	data[0] = 0x76; // Reset
-	r = Write(data);
+	//data[0] = 0x76; // Reset
+	//r = Write(data);
 
 	data[0] = 0x20; // Write PID
 	data[1] = 0x02; // CAN Filter
 	data[2] = 0x00;
 	data[3] = 0x00;	
 	data[4] = 0x01; // Disable CAN ID filter
+	r = Write(data);
+
+	DelayMs(10);
+
+#if 0
+	data[0] = 0x20;
+	data[1] = 0x04; // Save multi turn angle before power down
+	data[2] = 0x00;
+	data[3] = 0x00;	
+	data[4] = 0x01; // Enable
+	r = Write(data);
+#endif
+
+	memset(data, 0, 8);
+	data[0] = 0x81; // Stop and fix position
 	r = Write(data);
 
 	return r;
@@ -611,13 +626,13 @@ int RMDx6v3::WritePID(uint8_t posKp, uint8_t posKi, uint8_t velKp, uint8_t velKi
 int RMDx6v3::ReadPosition()
 {
 	int r = 0;
-
+#if 0
 	uint8_t data[8] = {0};
 	data[0] = 0x92; // Read Multi Turn Angle
 	r = Write(data);
 	data[0] = 0x60; // Read multi turn encoder position
 	r = Write(data);
-
+#endif
 	return r;
 }
 
