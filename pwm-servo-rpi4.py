@@ -57,6 +57,11 @@ def pwm_handler(channel, data):
 	msg = pwm_t.decode(data)
 	print("Received message on channel \"%s\" %d %d" % (channel, msg.channel, msg.angle))
 
+	if msg.angle > 180:
+		msg.angle = 180
+	if msg.angle < 0:
+		msg.angle = 0
+
 	#pwm.setRotationAngle(msg.channel, msg.angle)
 	servo.Servo(pca.channels[msg.channel]).angle = msg.angle
 
@@ -64,7 +69,7 @@ if __name__ == "__main__":
 	#pwm.setServoPulse(1,500) 
 	for i in range(16):
 		#pwm.setRotationAngle(i, 90)
-		servo.Servo(pca.channels[i], actuation_range=360, min_pulse=500, max_pulse=2600).angle = 180
+		servo.Servo(pca.channels[i], actuation_range=180, min_pulse=750, max_pulse=2250).angle = 0
 
 	lc = lcm.LCM()
 

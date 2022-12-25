@@ -39,6 +39,7 @@
 #include "servolcm/position_t.hpp"
 #include "servolcm/status_t.hpp"
 #include "servolcm/pwm_t.hpp"
+#include "servolcm/led_t.hpp"
 
 #include "protolcm/status_t.hpp"
 #include "protolcm/command_t.hpp"
@@ -264,13 +265,18 @@ static int read_gpio(int gpio)
 
 typedef struct {
 	float pitch, roll;
+	uint8_t byte;
 	float timestamp;
 } Petal;
 
 #define NUM_PETAL 25
+#define NUM_FLOWER 3
+#define NUM_LED 3
 #define NUM_EXTRA_PETAL 5
-#define NUM_EXTRAL_LED 1
-static vector<Petal> s_petals[NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED];
+
+#define NUM_TOTAL (NUM_PETAL + NUM_FLOWER + NUM_LED + NUM_EXTRA_PETAL)
+
+static vector<Petal> s_petals[NUM_TOTAL];
 
 static bool parse_flower_csv(const char *filename) {
 	FILE *fp = fopen(filename, "r");
@@ -279,7 +285,7 @@ static bool parse_flower_csv(const char *filename) {
 		return false;
 	}
 
-	for(int i=0;i<NUM_PETAL;i++) {
+	for(int i=0;i<NUM_TOTAL;i++) {
 		s_petals[i].clear();
 	}
 
@@ -323,13 +329,13 @@ static bool parse_flower_csv(const char *filename) {
 
 		uint8_t id = atou8(&argv[0][1]);
 #if 1
-		//if(id > 0 && id <= NUM_PETAL) {
-		if(id > 0 && id <= (NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED)) {
+		if(id > 0 && id <= NUM_TOTAL) {
 			Petal pl;
 			pl.pitch = atof(argv[1]);
 			pl.roll = atof(argv[2]);
+			pl.byte = (int)(atof(argv[1])) & 0xff;
 			pl.timestamp = atof(argv[3]);
-
+//printf("id = %d\n", id);
 			int a = (int)roundf(pl.timestamp * 100) % 5;
 			if(a == 0) {
 				s_petals[id - 1].push_back(pl);
@@ -411,8 +417,8 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 		});
 	}
 #endif
-	vector<Petal>::iterator ppls[NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED];
-	for(uint8_t i=0;i<NUM_PETAL + NUM_EXTRA_PETAL + NUM_EXTRAL_LED;i++) {
+	vector<Petal>::iterator ppls[NUM_TOTAL];
+	for(uint8_t i=0;i<NUM_TOTAL;i++) {
 		ppls[i] = s_petals[i].begin();
 	}
 
@@ -463,25 +469,63 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 				//std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
 
-			for(uint8_t i=0;i<NUM_EXTRA_PETAL;i++) {
+/*
+			for(uint8_t i=0;i<NUM_LED;i++) {
+				uint8_t ei = i + NUM_PETAL + NUM_LED;
+				if(ppls[ei] == s_petals[ei].end())
+					continue;
+
+				// TODO : GPIO control ?
+			}
+*/
+			for(uint8_t i=0;i<NUM_FLOWER;i++) {
 				uint8_t ei = i + NUM_PETAL;
 				if(ppls[ei] == s_petals[ei].end())
 					continue;
 
 				servolcm::pwm_t r;
-				r.channel = i;
+				r.channel = NUM_EXTRA_PETAL + i; // PWM Channel 5~7 
+				// 0~90 -> 20~80 degree
 				r.angle = ppls[ei]->pitch;
+				if(r.angle > 90)
+					r.angle = 90;
+				else if(r.angle < 0)
+					r.angle = 0;
+
+				r.angle = (r.angle * (80 - 20) / 90) + 20;
 
 				s_lcm.publish("PWM", &r);
 				++ppls[ei];
 			}
 
-			for(uint8_t i=0;i<NUM_EXTRAL_LED;i++) {
-				uint8_t ei = i + NUM_PETAL + NUM_EXTRAL_LED;
+			{
+				uint8_t ei = NUM_PETAL + NUM_FLOWER;
+				servolcm::led_t led;
+				if(ppls[ei] == s_petals[ei].end())
+					continue;
+				led.r = ppls[ei]->byte;
+				if(ppls[ei] == s_petals[ei+1].end())
+					continue;
+				led.g = ppls[ei+1]->byte;
+				if(ppls[ei] == s_petals[ei+2].end())
+					continue;
+				led.b = ppls[ei+2]->byte;
+				led.breathing = 0;
+
+				s_lcm.publish("LED", &led);
+			}
+
+			for(uint8_t i=0;i<NUM_EXTRA_PETAL;i++) {
+				uint8_t ei = i + NUM_PETAL + NUM_FLOWER + NUM_LED;
 				if(ppls[ei] == s_petals[ei].end())
 					continue;
 
-				// TODO : GPIO control ?
+				servolcm::pwm_t r;
+				r.channel = i; // PWM Channel 0~4
+				r.angle = ppls[ei]->pitch;
+
+				s_lcm.publish("PWM", &r);
+				++ppls[ei];
 			}
 
 			printf("\rpercentage %ld%%", distance(s_petals[0].begin(), ppls[0]) * 100 / s_petals[0].size());
@@ -607,7 +651,7 @@ static void can_cmd(vector<string> & tokens)
 }
 
 #define MAX_NUM_PWM_SERVO 16
-#define MAX_SERVO_ANGLE 360
+#define MAX_SERVO_ANGLE 180
 
 static void pwm_cmd(vector<string> & tokens)
 {
@@ -643,7 +687,92 @@ static void pwm_cmd(vector<string> & tokens)
 			bias = MAX_SERVO_ANGLE / 2;
 		
 		zero_bias[channel] = bias;
+	} else if(tokens[1] == "pos0_4") {
+		int16_t angle = stoi(tokens[2]);
+		if(angle > MAX_SERVO_ANGLE)
+			angle = MAX_SERVO_ANGLE;
+
+		printf("PWM 0~4 set angle %u degree\n", angle);
+
+		for(int i=0;i<5;i++) {
+			servolcm::pwm_t r;
+			r.channel = i;
+			r.angle = angle;
+
+			s_lcm.publish("PWM", &r);
+		}
+	} else if(tokens[1] == "test") {
+		if(tokens.size() < 4) {
+			return;
+		}
+
+		int16_t a0 = stoi(tokens[2]);
+		if(a0 > MAX_SERVO_ANGLE)
+			a0 = MAX_SERVO_ANGLE;
+
+		int16_t a1 = stoi(tokens[3]);
+		if(a1 > MAX_SERVO_ANGLE)
+			a1 = MAX_SERVO_ANGLE;
+
+		printf("PWM 0~7 test angle %u degree\n", a0, a1);
+
+		int dir = 1;
+		int pos = a0;
+		while(1) {
+			while(1) {
+				for(int i=0;i<5;i++) {
+					servolcm::pwm_t r;
+					r.channel = i;
+					r.angle = pos;
+
+					s_lcm.publish("PWM", &r);
+				}
+				for(int i=5;i<8;i++) {
+					servolcm::pwm_t r;
+					r.channel = i;
+					r.angle = pos;
+
+					s_lcm.publish("PWM", &r);
+				}
+				usleep(100000);
+//printf("pos = %d\n", pos);
+				if(select_stdin(0) > 0) { // No timeout
+					char ch;
+					::read(0, &ch, 1); // Read one character in raw mode.
+					if(ch == 'q' || ch == 'Q') {
+						printf("\nStopped !!!\n");
+						dir = 0;
+						break;
+					}
+				}
+
+				pos += dir;
+
+				if(dir == 1 && pos > a1) {
+					dir = -1;
+					break;
+				}
+				if(dir == -1 && pos < a0) {
+					dir = 1;
+					break;
+				}
+			}
+			if(dir == 0)
+				break;
+//printf("dir = %d\n", dir);
+			pos += dir;
+		}
 	}
+}
+
+static void led_cmd(vector<string> & tokens)
+{
+	servolcm::led_t led;
+	led.r = stoi(tokens[1]) & 0xff;
+	led.g = stoi(tokens[2]) & 0xff;
+	led.b = stoi(tokens[3]) & 0xff;
+
+	s_lcm.publish("LED", &led);
 }
 
 static void gpio_cmd(vector<string> & tokens)
@@ -840,46 +969,56 @@ static bool home_cmd()
 	// CAN0 M8010L[0~14]
 
 	printf("\nRaising up all outter petals\n");
-	if(!outter_motors_goto(0, -8000, 200))
+	if(!outter_motors_goto(0, -8000, 200)) {
+		s_is_home_cmd_success = false;
 		return false;
+	}
 
 	// CAN1 RMDx6v3[0~14]
 
 	printf("\nRotate all outter petals\n");
-#if 0
-	if(!outter_motors_goto(1, 2400, 200))
+
+	if(!outter_motors_goto(1, 2400, 200)) {
+		s_is_home_cmd_success = false;
 		return false;
-#else
-	outter_motors_goto(1, 2400, 200);
-#endif
+	}
+
 	// CAN0 M8010L[15~24]
 
 	printf("\nRaising up all inner petals\n");
-	if(!inner_motors_goto(0, -4000, 200))
+	if(!inner_motors_goto(0, -4000, 200)) {
+		s_is_home_cmd_success = false;
 		return false;
+	}
 
 	// CAN1 RMDx6v3[15~24]
 
 	printf("\nRotate all inner petals\n");
-#if 0
-	if(!inner_motors_goto(1, 2400, 200))
+
+	if(!inner_motors_goto(1, 2400, 200)) {
+		s_is_home_cmd_success = false;
 		return false;
-#else	
-	inner_motors_goto(1, 2400, 200);
-#endif
+	}
+
 	// CAN0 M8010L[15~24]
 
 	printf("\nLow down all inner petals\n");
-	if(!inner_motors_goto(0, 0, 200))
+	if(!inner_motors_goto(0, 0, 200)) {
+		s_is_home_cmd_success = false;
 		return false;
+	}
 
 	// CAN0 M8010L[0~14]
 
 	printf("\nLow down all outter petals\n");
-	if(!outter_motors_goto(0, 0, 200))
+	if(!outter_motors_goto(0, 0, 200)) {
+		s_is_home_cmd_success = false;
 		return false;
+	}
 
 	printf("\nDone ...\n");
+
+	s_is_home_cmd_success = true;
 
 	return true;
 }
@@ -897,12 +1036,10 @@ static bool safe_cmd()
 	// CAN1 RMDx6v3[0~14]
 
 	printf("\nRotate all outter petals\n");
-#if 0
-	if(!outter_motors_goto(1, 2400, 200))
+
+	if(!outter_motors_goto(1, 0, 200))
 		return false;
-#else
-	outter_motors_goto(1, 0, 200);
-#endif
+
 	// CAN0 M8010L[15~24]
 
 	printf("\nRaising up all inner petals\n");
@@ -912,12 +1049,10 @@ static bool safe_cmd()
 	// CAN1 RMDx6v3[15~24]
 
 	printf("\nRotate all inner petals\n");
-#if 0
-	if(!inner_motors_goto(1, 2400, 200))
+
+	if(!inner_motors_goto(1, 0, 200))
 		return false;
-#else	
-	inner_motors_goto(1, 0, 200);
-#endif
+
 	// CAN0 M8010L[15~24]
 
 	printf("\nLow down all inner petals\n");
@@ -1257,6 +1392,9 @@ Management Commands:\n\
   can [bus ID] [dev ID] <reset | status | pos <position speed> | test <position speed> | origin >\n\
   tcp <reconnect | disconnect>\n\
   pwm pos [channel] [angle]\n\
+  pwm pos0_4 [angle]\n\
+  pwm test [angle] [angle]\n\
+  led [R G B]\n\
   gpio port [0 | 1]\n\
   play [file]\n\
   origin\n\
@@ -1328,8 +1466,13 @@ static int can_main(int argc, char**argv)
 					else
 						printf(help);
 				} else if(tokens[0] == "pwm") {
-					if(tokens.size() >= 4)
+					if(tokens.size() >= 3)
 						pwm_cmd(tokens);
+					else
+						printf(help);
+				} else if(tokens[0] == "led") {
+					if(tokens.size() >= 4)
+						led_cmd(tokens);
 					else
 						printf(help);
 				} else if(tokens[0] == "gpio") {
@@ -1342,7 +1485,7 @@ static int can_main(int argc, char**argv)
 				} else if(tokens[0] == "reset") {
 					reset_cmd();
 				} else if(tokens[0] == "home") {
-					s_is_home_cmd_success = home_cmd();
+					home_cmd();
 				} else if(tokens[0] == "safe") {
 					safe_cmd();
 				} else if(tokens[0] == "shutdown") {

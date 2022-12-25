@@ -26,3 +26,11 @@ struct pwm_t
 	byte channel;
 	int16_t angle; // 0 ~ 360 degree
 }
+
+struct led_t
+{
+	byte r;
+	byte g;
+	byte b;
+	float breathing;
+}
