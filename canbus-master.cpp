@@ -501,16 +501,23 @@ static void play_file_cmd(const char *filename, int32_t replayCount)
 			{
 				uint8_t ei = NUM_PETAL + NUM_FLOWER;
 				servolcm::led_t led;
+
 				if(ppls[ei] == s_petals[ei].end())
 					continue;
 				led.r = ppls[ei]->byte;
+				++ppls[ei];
+
 				if(ppls[ei] == s_petals[ei+1].end())
 					continue;
 				led.g = ppls[ei+1]->byte;
+				++ppls[ei+1];
+
 				if(ppls[ei] == s_petals[ei+2].end())
 					continue;
 				led.b = ppls[ei+2]->byte;
-				led.breathing = 0;
+				++ppls[ei+2];
+
+				led.breathing = 0.2;
 
 				s_lcm.publish("LED", &led);
 			}
@@ -1649,6 +1656,10 @@ static int emergency_main(int gpio)
 
 	return 0;
 }
+
+/*
+* canbusload can0@1000000 can1@500000 -r -t -b -c
+*/
 
 int main(int argc, char**argv)
 {

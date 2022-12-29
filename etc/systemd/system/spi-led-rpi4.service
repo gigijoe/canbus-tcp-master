@@ -1,0 +1,12 @@
+[Unit]
+Description=LED RPi4
+After=network.target multi-user.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/spi-led-rpi4.py 
+Type=simple
+Restart=on-success
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
